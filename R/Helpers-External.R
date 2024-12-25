@@ -133,3 +133,23 @@ edgar_read_document_links <- function(.dir, .from = NULL, .to = NULL, .ciks = NU
     return(arr_)
   }
 }
+
+
+
+#' Standardize String Content
+#'
+#' @description
+#' Standardizes string content by removing extra whitespace and converting to ASCII.
+#'
+#' @param .str Character string to standardize
+#'
+#' @return Standardized character string
+#'
+#' @keywords internal
+standardize_string <- function(.str) {
+  str_ <- .str
+  str_ <- stringi::stri_replace_all_regex(str_, "([[:blank:]|[:space:]])+", " ")
+  str_ <- stringi::stri_trans_general(str_, "Latin-ASCII")
+  str_ <- trimws(str_)
+  return(str_)
+}

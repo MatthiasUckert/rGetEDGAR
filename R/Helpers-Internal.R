@@ -87,210 +87,6 @@ filter_edgar_data <- function(.tab, .params) {
   return(tab_)
 }
 
-#' Print Verbose Messages
-#'
-#' @description
-#' Prints status messages with consistent formatting if verbose mode is enabled.
-#'
-#' @param .msg Character string containing the message to print
-#' @param .verbose Logical indicating whether to print the message
-#' @param .line Character string specifying the line ending (default: "\\n")
-#'
-#' @keywords internal
-print_verbose <- function(.msg, .verbose, .line = "\n") {
-  if (.verbose) {
-    cat(.line, paste0(.msg, paste(rep(" ", 40), collapse = "")))
-  }
-}
-
-
-
-# Utils ---------------------------------------------------------------------------------------
-#' Set Up Directory Structure
-#'
-#' @description
-#' Creates and returns the directory structure for storing EDGAR data.
-#'
-#' @param .dir Character string specifying the base directory
-#'
-#' @return A list containing paths for MasterIndex, DocumentLinks, and DocumentData
-#'
-#' @keywords internal
-get_directories <- function(.dir) {
-  dir_ <- fs::dir_create(.dir)
-  dir_master_ <- fs::dir_create(file.path(dir_, "MasterIndex"))
-  dir_links_ <- fs::dir_create(file.path(dir_, "DocumentLinks"))
-  list(
-    MasterIndex = list(
-      Sqlite = file.path(dir_master_, "MasterIndex.sqlite"),
-      Parquet = file.path(dir_master_, "MasterIndex.parquet")
-    ),
-    DocumentLinks = list(
-      Sqlite = file.path(dir_links_, "DocumentLinks.sqlite"),
-      Parquet = file.path(dir_links_, "DocumentLinks.parquet"),
-      Temporary = file.path(dir_links_, "TemporaryProcessing.parquet")
-    ),
-    DocumentData = list(
-      Main = fs::dir_create(file.path(dir_, "DocumentData", "Main")),
-      Temporary = file.path(dir_, "DocumentData", "TemporaryProcessing.parquet")
-    )
-  )
-}
-
-#' Generate Year-Quarter Combinations
-#'
-#' @description
-#' Creates a table of all possible year-quarter combinations within the specified date range.
-#' Uses validated parameters from get_edgar_params() for date range processing.
-#'
-#' @param .from Numeric value specifying the start year.quarter (e.g., 2020.1 for Q1 2020).
-#'             If NULL, defaults to 1993.1
-#' @param .to Numeric value specifying the end year.quarter.
-#'           If NULL, defaults to current quarter
-#'
-#' @return A tibble with columns:
-#' \itemize{
-#'   \item Year: Integer representing the year
-#'   \item Quarter: Integer representing the quarter (1-4)
-#'   \item YearQuarter: Numeric combining year and quarter (e.g., 2020.1)
-#' }
-#'
-#' @details
-#' The function creates all possible combinations of years and quarters between
-#' the specified date range. It uses get_edgar_params() to validate and process
-#' the input parameters, ensuring consistent date range handling across the package.
-#'
-#' @keywords internal
-#'
-#' @seealso get_edgar_params
-get_year_qtr_table <- function(.from = NULL, .to = NULL) {
-  params_ <- get_edgar_params(.from, .to)
-  tidyr::expand_grid(
-    Year = 1993:lubridate::year(Sys.Date()),
-    Quarter = 1:4
-  ) %>%
-    dplyr::mutate(
-      YearQuarter = as.numeric(paste0(Year, ".", Quarter))
-    ) %>%
-    dplyr::filter(dplyr::between(YearQuarter, params_$from, params_$to))
-}
-
-#' Format Numbers for Display
-#'
-#' @description
-#' Formats numbers as either comma-separated values or percentages.
-#'
-#' @param .num Numeric value to format
-#' @param .type Character string specifying format type: "c" for comma or "p" for percentage
-#'
-#' @return Formatted character string
-#'
-#' @keywords internal
-format_number <- function(.num, .type = c("c", "p")) {
-  # Match first argument of .type
-  .type <- match.arg(.type)
-
-  if (.type == "c") {
-    # Format as number with comma separator
-    return(trimws(format(.num, big.mark = ",", scientific = FALSE)))
-  } else {
-    # Format as percentage with 4 decimal places
-    return(trimws(paste0(format(round(.num * 100, 4), nsmall = 4), "%")))
-  }
-}
-
-#' Format Time Status Message
-#'
-#' @description
-#' Creates a formatted status message showing elapsed time and estimated time remaining.
-#'
-#' @param .t0 POSIXct start time
-#' @param .i Current iteration number
-#' @param .n Total number of iterations
-#'
-#' @return Formatted status message
-#'
-#' @keywords internal
-format_time_status <- function(.t0, .i, .n) {
-  ela_ <- difftime(Sys.time(), .t0, units = "secs")
-  eta_ <- (ela_ / .i) * (.n - .i)
-  ela_ <- dplyr::case_when(
-    ela_ > 60 * 60 * 24 ~ sprintf("%.2f days", ela_ / (60 * 60 * 24)),
-    ela_ > 60 * 60 ~ sprintf("%.2f hours", ela_ / (60 * 60)),
-    ela_ > 60 ~ sprintf("%.2f mins", ela_ / 60),
-    TRUE ~ sprintf("%.2f secs", ela_)
-  )
-  eta_ <- dplyr::case_when(
-    eta_ > 60 * 60 * 24 ~ sprintf("%.2f days", eta_ / (60 * 60 * 24)),
-    eta_ > 60 * 60 ~ sprintf("%.2f hours", eta_ / (60 * 60)),
-    eta_ > 60 ~ sprintf("%.2f mins", eta_ / 60),
-    TRUE ~ sprintf("%.2f secs", eta_)
-  )
-  sprintf(" | Elapsed: %s | ETA: %s", ela_, eta_)
-}
-
-format_loop <- function(.i, .n) {
-  paste0("Loop: ", format_number(.i), " of ", format_number(.n))
-}
-
-
-#' Standardize String Content
-#'
-#' @description
-#' Standardizes string content by removing extra whitespace and converting to ASCII.
-#'
-#' @param .str Character string to standardize
-#'
-#' @return Standardized character string
-#'
-#' @keywords internal
-standardize_string <- function(.str) {
-  str_ <- .str
-  str_ <- stringi::stri_replace_all_regex(str_, "([[:blank:]|[:space:]])+", " ")
-  str_ <- stringi::stri_trans_general(str_, "Latin-ASCII")
-  str_ <- trimws(str_)
-  return(str_)
-}
-
-
-# Warnings ------------------------------------------------------------------------------------
-#' Generate Master Index Warning
-#'
-#' @description
-#' Generates a warning message for master index fetch failures.
-#'
-#' @param .year Year of the failed fetch
-#' @param .qtr Quarter of the failed fetch
-#'
-#' @keywords internal
-get_warning_master_index <- function(.year, .qtr) {
-  warning(paste0("Error in fetching Year-Quarter: ", .year, "-", .qtr, ", continue..."), call. = FALSE)
-}
-
-#' Generate Document Links Warning
-#'
-#' @description
-#' Generates a warning message for document links parsing failures.
-#'
-#' @param .cik CIK number of the failed parsing
-#'
-#' @keywords internal
-get_warning_document_links <- function(.cik) {
-  warning(paste0("Error in parsing Document Links for CIK: ", .cik, ", continue..."), call. = FALSE)
-}
-
-#' Generate Document Download Warning
-#'
-#' @description
-#' Generates a warning message for document download failures.
-#'
-#' @param .cik CIK number of the failed download
-#'
-#' @keywords internal
-get_warning_document_download <- function(.cik) {
-  warning(paste0("Error in downloading Document for CIK: ", .cik, ", continue..."), call. = FALSE)
-}
-
 
 
 # Requests ------------------------------------------------------------------------------------
@@ -490,6 +286,23 @@ initial_document_links_database <- function(.dir) {
   }
 }
 
+#' Get Master Index Records To Be Processed
+#'
+#' @description
+#' Identifies and prepares master index records that haven't been processed yet. The function:
+#' 1. Retrieves already processed records from the document links database
+#' 2. Filters the master index dataset based on provided parameters
+#' 3. Excludes already processed records
+#' 4. Prepares the data for parallel processing by splitting it into chunks
+#'
+#' @param .dir Base directory for the SEC data storage
+#' @param .params List of filtering parameters from get_edgar_params()
+#' @param .workers Number of parallel workers to use for processing
+#'
+#' @return Writes a parquet file to the temporary directory containing records to be processed,
+#'         with an additional 'Split' column for parallel processing
+#'
+#' @keywords internal
 get_to_be_processed_master_index <- function(.dir, .params, .workers) {
   lp_ <- get_directories(.dir)
   prc_ <- arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
@@ -511,8 +324,26 @@ get_to_be_processed_master_index <- function(.dir, .params, .workers) {
 
 }
 
-
-
+#' Create Error Table for Document Link Processing
+#'
+#' @description
+#' Creates a standardized error response table when document link processing fails.
+#' This ensures consistent error handling and data structure even when the retrieval
+#' or processing of document links encounters problems.
+#'
+#' @return A tibble with empty/NA values for document link fields and Error=TRUE:
+#'   \itemize{
+#'     \item HashDocument: Character, document hash identifier
+#'     \item Seq: Integer, sequence number
+#'     \item Description: Character, document description
+#'     \item Document: Character, document name
+#'     \item Type: Character, document type
+#'     \item Size: Integer, document size
+#'     \item UrlDocument: Character, document URL
+#'     \item Error: Logical, always TRUE for error tables
+#'   }
+#'
+#' @keywords internal
 error_table_document_link <- function() {
   tibble::tibble(
     HashDocument = NA_character_,
@@ -542,6 +373,10 @@ help_get_document_link <- function(.url, .user) {
 
   if (inherits(result_, "try-error")) {
     return(error_table_document_link())
+  }
+
+  if (httr::status_code(result_) == 429) {
+    Sys.sleep(60)
   }
 
   if (!httr::status_code(result_) == 200) {
@@ -586,6 +421,103 @@ help_get_document_link <- function(.url, .user) {
   return(out_)
 }
 
+#' Write Document Links to Parquet File
+#'
+#' @description
+#' Transfers the entire document links table from SQLite database to a Parquet file format.
+#' This function provides a way to maintain a Parquet copy of the document links data,
+#' which can be more efficient for certain types of data analysis and filtering operations.
+#'
+#' @param .dir Base directory for the SEC data storage
+#'
+#' @details
+#' The function:
+#' 1. Establishes a connection to the SQLite database
+#' 2. Reads the entire 'document_links' table
+#' 3. Writes the data to a Parquet file
+#' 4. Ensures proper database connection cleanup
+#'
+#' The connection to the database is automatically closed using on.exit(),
+#' even if the function encounters an error.
+#'
+#' @note
+#' This function returns invisibly and is primarily used for its side effect
+#' of creating/updating the Parquet file.
+#'
+#' @keywords internal
+write_document_links_to_parquet <- function(.dir) {
+  lp_ <- get_directories(.dir)
+  con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$DocumentLinks$Sqlite)
+  dplyr::tbl(con_, "document_links") %>%
+    dplyr::collect() %>%
+    arrow::write_parquet(lp_$DocumentLinks$Parquet)
+  suppressWarnings(DBI::dbDisconnect(con_))
+  suppressWarnings(invisible(on.exit(DBI::dbDisconnect(con_))))
+}
+
+#' Write Document Links to SQLite Database
+#'
+#' @description
+#' Appends new document links data to the existing SQLite database. This function
+#' serves as a way to incrementally add new document links to the persistent storage.
+#'
+#' @param .dir Base directory for the SEC data storage
+#' @param .tab Data frame or tibble containing new document links to be appended.
+#'            Must match the structure of the 'document_links' table.
+#'
+#' @details
+#' The function:
+#' 1. Connects to the SQLite database in the specified directory
+#' 2. Appends the provided data to the existing 'document_links' table
+#' 3. Ensures proper database connection cleanup
+#'
+#' The connection to the database is automatically closed using on.exit(),
+#' even if the function encounters an error.
+#'
+#' @note
+#' - The function assumes the 'document_links' table already exists
+#' - Data is appended rather than overwritten
+#' - The input table must match the expected schema of the document_links table
+#'
+#' @keywords internal
+write_document_links_to_sqlite <- function(.dir, .tab) {
+  lp_ <- get_directories(.dir)
+  con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$DocumentLinks$Sqlite)
+  DBI::dbWriteTable(con_, "document_links", .tab, append = TRUE)
+  suppressWarnings(DBI::dbDisconnect(con_))
+  suppressWarnings(invisible(on.exit(DBI::dbDisconnect(con_))))
+}
+
+#' Backup Document Links Database
+#'
+#' @description
+#' Creates periodic backups of the document links database. The function:
+#' 1. Runs every 3 hours (at hours 3, 6, 9, ..., 24)
+#' 2. Creates a compressed zip backup of the SQLite database
+#' 3. Updates the parquet file with current data
+#'
+#' @param .dir Base directory for the SEC data storage
+#'
+#' @details
+#' The backup filename includes the timestamp in format 'YYYY-MM-DD-HH'.
+#' Backups are only created if they don't already exist for the current time period.
+#'
+#' @keywords internal
+backup_document_links <- function(.dir) {
+  lp_ <- get_directories(.dir)
+  if (lubridate::hour(Sys.time()) %in% seq(3, 24, 3)) {
+    time_ <- format(Sys.time(), "%Y-%m-%d-%H")
+    file_ <- file.path(lp_$DocumentLinks$BackUps, paste0(time_, "_DocumentLinks.zip"))
+    if (!file.exists(file_)) {
+      suppressWarnings(zip::zip(file_, lp_$DocumentLinks$Sqlite, compression_level = 9))
+      write_document_links_to_parquet(.dir)
+    }
+  }
+}
+
+
+
+
 # Download Documents --------------------------------------------------------------------------
 #' Get Processed Documents
 #'
@@ -628,31 +560,49 @@ help_download_document <- function(.url, .user) {
   result_ <- make_get_request(.url, .user)
 
   if (inherits(result_, "try-error") || !httr::status_code(result_) == 200) {
-    return(tibble::tibble(HTML = NA_character_, TextRaw = NA_character_, TextMod = NA_character_))
+    return(tibble::tibble(HTML = NA_character_, TextRaw = NA_character_, TextMod = NA_character_, Error = TRUE))
   }
 
   # Parse Content -- -- -- -- -- -- -- -- -- -
   content_ <- parse_content(result_)
   if (inherits(content_, "try-error") || is.na(content_)) {
-    return(tibble::tibble(HTML = NA_character_, TextRaw = NA_character_, TextMod = NA_character_))
+    return(tibble::tibble(HTML = NA_character_, TextRaw = NA_character_, TextMod = NA_character_, Error = TRUE))
   }
 
 
   html_ <- try(rvest::read_html(content_, options = "HUGE"), silent = TRUE)
   if (inherits(html_, "try-error")) {
-    return(tibble::tibble(HTML = content_, TextRaw = NA_character_, TextMod = NA_character_))
+    return(tibble::tibble(HTML = content_, TextRaw = NA_character_, TextMod = NA_character_, Error = FALSE))
   }
 
   text_raw_ <- try(rvest::html_text(html_), silent = TRUE)
   if (inherits(text_raw_, "try-error")) {
-    return(tibble::tibble(HTML = content_, TextRaw = NA_character_, TextMod = NA_character_))
+    return(tibble::tibble(HTML = content_, TextRaw = NA_character_, TextMod = NA_character_, Error = FALSE))
   }
 
   text_mod_ <- standardize_string(text_raw_)
 
-  return(tibble::tibble(HTML = content_, TextRaw = text_raw_, TextMod = text_mod_))
+  return(tibble::tibble(HTML = content_, TextRaw = text_raw_, TextMod = text_mod_, Error = FALSE))
 }
 
+#' Get Document Links To Be Downloaded
+#'
+#' @description
+#' Identifies and prepares document links that haven't been downloaded yet. The function:
+#' 1. Checks already downloaded documents in the main document data directory
+#' 2. Filters the document links dataset based on provided parameters
+#' 3. Excludes already downloaded documents
+#' 4. Prepares the data for parallel processing
+#'
+#' @param .dir Base directory for the SEC data storage
+#' @param .params List of filtering parameters from get_edgar_params()
+#' @param .workers Number of parallel workers to use for processing
+#'
+#' @return Writes a parquet file to the temporary directory containing links to be processed,
+#'         with an additional 'Split' column for parallel processing. Only includes
+#'         documents with valid file extensions.
+#'
+#' @keywords internal
 get_to_be_processed_download_links <- function(.dir, .params, .workers) {
   lp_ <- get_directories(.dir)
   arr_ <- arrow::open_dataset(lp_$DocumentData$Main)
@@ -681,4 +631,51 @@ get_to_be_processed_download_links <- function(.dir, .params, .workers) {
     ) %>%
     arrow::write_parquet(lp_$DocumentData$Temporary)
 
+}
+
+#' Write SEC Document Data to Parquet Files
+#'
+#' @description
+#' Writes or appends SEC document data to company-specific Parquet files. The function
+#' organizes documents by CIK (company identifier) and handles both new file creation
+#' and updates to existing files.
+#'
+#' @param .tab A tibble/data frame containing document data with the following columns:
+#'   \itemize{
+#'     \item HashDocument: Unique identifier for the document
+#'     \item Year, Quarter, YearQuarter: Time period identifiers
+#'     \item CIK: Company identifier
+#'     \item Type: Document type
+#'     \item HTML: Raw HTML content
+#'     \item TextRaw: Extracted raw text
+#'     \item TextMod: Processed/standardized text
+#'     \item PathOut: Full path for the output Parquet file
+#'   }
+#'
+#' @details
+#' The function:
+#' 1. Splits the input data by PathOut (company-specific file paths)
+#' 2. For each company:
+#'    - If a Parquet file exists: Reads existing data and appends new data
+#'    - If no file exists: Creates a new Parquet file
+#' 3. Removes the PathOut column before writing
+#' 4. Maintains one Parquet file per company (CIK)
+#'
+#' @note
+#' - The function assumes the parent directories in PathOut already exist
+#' - Data is appended without checking for duplicates
+#' - The function processes files in memory, so consider memory usage with large datasets
+#'
+#' @keywords internal
+write_document_data <- function(.tab) {
+  purrr::iwalk(
+    .x =  split(dplyr::select(.tab, -PathOut), .tab$PathOut),
+    .f = ~ {
+      if (file.exists(.y)) {
+        arrow::write_parquet(dplyr::bind_rows(arrow::read_parquet(.y), .x), .y)
+      } else {
+        arrow::write_parquet(.x, .y)
+      }
+    }
+  )
 }

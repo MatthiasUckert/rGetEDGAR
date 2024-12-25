@@ -53,4 +53,5 @@ edgar_get_master_index(
   .to = 2021.4
 )
 }
+
 }

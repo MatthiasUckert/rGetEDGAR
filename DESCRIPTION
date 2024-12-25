@@ -1,9 +1,14 @@
 Package: rGetEDGAR
-Title: What the Package Does (One Line, Title Case)
-Version: 0.0.0.9000
+Title: Efficient Parallel Downloading and Processing of SEC EDGAR Filings
+Version: 0.1.0
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
-Description: What the package does (one paragraph).
+    person("Matthias", "Uckert", , "Matthias.Uckert@outlook.com", role = c("aut", "cre"))
+Description: Provides tools for downloading and processing SEC EDGAR filings with a focus 
+    on performance and reliability. Features include parallel downloading of master indices 
+    and document links, rate-limited requests respecting SEC guidelines, robust error handling, 
+    and efficient storage in both SQLite and Parquet formats. The package supports incremental 
+    updates, automated backups, and offers a flexible filtering system for targeting specific 
+    companies, document types, and time periods.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -25,4 +30,5 @@ Imports:
     rvest,
     stringi,
     tibble,
-    tidyr
+    tidyr,
+    zip

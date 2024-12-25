@@ -64,4 +64,5 @@ edgar_get_document_links(
   .ciks = c("0000320193", "0001018724")  # Apple and Amazon
 )
 }
+
 }
