@@ -4,10 +4,10 @@
 \alias{initial_document_links_database}
 \title{Initialize Document Links Database}
 \usage{
-initial_document_links_database(.path)
+initial_document_links_database(.dir)
 }
 \arguments{
-\item{.path}{Path to SQLite database file}
+\item{.dir}{Path to SQLite database file}
 }
 \description{
 Creates SQLite database schema for document links if it doesn't exist.

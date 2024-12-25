@@ -4,14 +4,12 @@
 \alias{help_download_document}
 \title{Download Document}
 \usage{
-help_download_document(.url, .user, .workers)
+help_download_document(.url, .user)
 }
 \arguments{
 \item{.url}{URL of the document}
 
 \item{.user}{User agent string}
-
-\item{.workers}{Number of parallel workers}
 }
 \value{
 Tibble with document content and processed text

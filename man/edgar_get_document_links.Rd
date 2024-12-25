@@ -10,6 +10,7 @@ edgar_get_document_links(
   .from = NULL,
   .to = NULL,
   .ciks = NULL,
+  .workers = 1L,
   .verbose = TRUE
 )
 }
@@ -23,6 +24,8 @@ edgar_get_document_links(
 \item{.to}{Numeric value specifying the end year.quarter}
 
 \item{.ciks}{Character vector of CIK numbers to filter for specific companies}
+
+\item{.workers}{Integer specifying the number of parallel workers for downloading}
 
 \item{.verbose}{Logical indicating whether to print progress messages}
 }

@@ -67,13 +67,21 @@ get_edgar_params <- function(.from = NULL, .to = NULL, .ciks = NULL, .types = NU
 filter_edgar_data <- function(.tab, .params) {
   tab_ <- .tab
   # Filter by CIK if specified
-  if (!anyNA(.params$ciks)) {
+  if (!is.na(.params$ciks)) {
     tab_ <- dplyr::filter(tab_, CIK %in% .params$ciks)
   }
 
   # Filter by document type if specified
-  if (!anyNA(.params$types)) {
+  if (!is.na(.params$types)) {
     tab_ <- dplyr::filter(tab_, Type %in% .params$types)
+  }
+
+  if (!is.na(.params$from)) {
+    tab_ <- dplyr::filter(tab_, YearQuarter >= .params$from)
+  }
+
+  if (!is.na(.params$to)) {
+    tab_ <- dplyr::filter(tab_, YearQuarter <= .params$to)
   }
 
   return(tab_)
@@ -119,9 +127,13 @@ get_directories <- function(.dir) {
     ),
     DocumentLinks = list(
       Sqlite = file.path(dir_links_, "DocumentLinks.sqlite"),
-      Parquet = file.path(dir_links_, "DocumentLinks.parquet")
+      Parquet = file.path(dir_links_, "DocumentLinks.parquet"),
+      Temporary = file.path(dir_links_, "TemporaryProcessing.parquet")
     ),
-    DocumentData = fs::dir_create(file.path(dir_, "DocumentData"))
+    DocumentData = list(
+      Main = fs::dir_create(file.path(dir_, "DocumentData", "Main")),
+      Temporary = file.path(dir_, "DocumentData", "TemporaryProcessing.parquet")
+    )
   )
 }
 
@@ -216,6 +228,11 @@ format_time_status <- function(.t0, .i, .n) {
   )
   sprintf(" | Elapsed: %s | ETA: %s", ela_, eta_)
 }
+
+format_loop <- function(.i, .n) {
+  paste0("Loop: ", format_number(.i), " of ", format_number(.n))
+}
+
 
 #' Standardize String Content
 #'
@@ -437,18 +454,15 @@ check_master_index_cols <- function(.tab) {
 #' @description
 #' Creates SQLite database schema for document links if it doesn't exist.
 #'
-#' @param .path Path to SQLite database file
+#' @param .dir Path to SQLite database file
 #'
 #' @keywords internal
-initial_document_links_database <- function(.path) {
-  if (file.exists(.path)) {
-    return(invisible(NULL))
-  }
+initial_document_links_database <- function(.dir) {
+  lp_ <- get_directories(.dir)
 
-  con_ <- DBI::dbConnect(RSQLite::SQLite(), .path)
-
-  # Create the document links table with appropriate data types
-  DBI::dbExecute(con_, "
+  if (!file.exists(lp_$DocumentLinks$Sqlite)) {
+    con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$DocumentLinks$Sqlite)
+    DBI::dbExecute(con_, "
     CREATE TABLE document_links (
       HashIndex TEXT,
       HashDocument TEXT,
@@ -462,27 +476,54 @@ initial_document_links_database <- function(.path) {
       Type TEXT,
       Size TEXT,
       UrlDocument TEXT
-    )
-  ")
+    )")
+    DBI::dbDisconnect(con_)
+  }
 
-  DBI::dbDisconnect(con_)
+  if (!file.exists(lp_$DocumentLinks$Parquet)) {
+    tibble::tibble(
+      HashIndex = NA_character_, HashDocument = NA_character_, CIK = NA_character_,
+      Year = NA_integer_, Quarter = NA_integer_, YearQuarter = NA_real_,
+      Seq = NA_character_, Description = NA_character_, Document = NA_character_,
+      Type = NA_character_, Size = NA_character_, UrlDocument = NA_character_
+    ) %>% arrow::write_parquet(lp_$DocumentLinks$Parquet)
+  }
 }
 
-#' Get Processed Hash Indexes
-#'
-#' @description
-#' Retrieves list of hash indexes that have already been processed.
-#'
-#' @param .con Database connection object
-#'
-#' @return Vector of processed hash indexes
-#'
-#' @keywords internal
-get_processed_hash_index <- function(.con) {
-  dplyr::tbl(.con, "document_links") %>%
+get_to_be_processed_master_index <- function(.dir, .params, .workers) {
+  lp_ <- get_directories(.dir)
+  prc_ <- arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
     dplyr::distinct(HashIndex) %>%
     dplyr::collect() %>%
     dplyr::pull(HashIndex)
+
+  arrow::open_dataset(lp_$MasterIndex$Parquet) %>%
+    filter_edgar_data(.params) %>%
+    dplyr::filter(!HashIndex %in% prc_) %>%
+    dplyr::select(HashIndex, Year, Quarter, YearQuarter, CIK, UrlIndexPage) %>%
+    dplyr::arrange(CIK, YearQuarter) %>%
+    dplyr::collect() %>%
+    dplyr::mutate(
+      Split = ceiling(dplyr::row_number() / .workers),
+      .before = HashIndex
+    ) %>%
+    arrow::write_parquet(lp_$DocumentLinks$Temporary)
+
+}
+
+
+
+error_table_document_link <- function() {
+  tibble::tibble(
+    HashDocument = NA_character_,
+    Seq = NA_integer_,
+    Description = NA_character_,
+    Document = NA_character_,
+    Type = NA_character_,
+    Size = NA_integer_,
+    UrlDocument = NA_character_,
+    Error = TRUE
+  )
 }
 
 #' Get Document Link
@@ -497,51 +538,51 @@ get_processed_hash_index <- function(.con) {
 #'
 #' @keywords internal
 help_get_document_link <- function(.url, .user) {
-  result_ <- httr::GET(
-    url = .url,
-    httr::add_headers(Connection = "keep-alive", `User-Agent` = .user)
-  )
+  result_ <- make_get_request(.url, .user)
 
-  code_ <- httr::status_code(result_)
-
-  if (!code_ == 200) {
-    warning(paste0("Error in fetching Year-Quarter: ", .url, ", continue..."))
-    return(tibble::tibble())
+  if (inherits(result_, "try-error")) {
+    return(error_table_document_link())
   }
 
-  content_ <- try(httr::content(result_, as = "text", encoding = "UTF-8"), silent = TRUE)
+  if (!httr::status_code(result_) == 200) {
+    return(error_table_document_link())
+  }
 
+
+  content_ <- parse_content(result_)
   if (inherits(content_, "try-error")) {
-    warning(paste0("Error in parsing Year-Quarter: ", .url, ", continue..."))
-    return(tibble::tibble())
+    return(error_table_document_link())
   }
 
   nodes_ <- rvest::read_html(content_) %>%
     rvest::html_elements(css = "#formDiv") %>%
     rvest::html_elements("table")
 
-  out_ <- purrr::map(
+  if (length(nodes_) == 0) {
+    return(error_table_document_link())
+  }
+
+  out_ <- try(purrr::map(
     .x = nodes_,
     .f = ~ rvest::html_table(.x) %>%
-      dplyr::mutate(
-        UrlDocument = rvest::html_attr(rvest::html_elements(.x, "a"), "href"),
-        UrlDocument = rvest::url_absolute(UrlDocument, "https://www.sec.gov/Archives/")
-      )
+      dplyr::mutate(UrlDocument = rvest::html_attr(rvest::html_elements(.x, "a"), "href"))
   ) %>%
     dplyr::bind_rows() %>%
     dplyr::mutate(
       HashDocument = purrr::map_chr(UrlDocument, digest::digest),
-      .before = Seq
-    ) %>%
-    dplyr::mutate(
-      Seq = as.integer(Seq),
-      Size = as.integer(Size),
-      Seq = dplyr::if_else(is.na(Seq), -1L, Seq),
-      dplyr::across(dplyr::where(is.character), trimws),
-      dplyr::across(dplyr::where(is.character), ~ dplyr::if_else(. == "", NA_character_, .)),
-    )
+      UrlDocument = rvest::url_absolute(UrlDocument, "https://www.sec.gov/Archives/"),
+      dplyr::across(c(Seq, Size), ~ dplyr::if_else(is.na(.), as.integer(.), -1L)),
+      dplyr::across(c(Description, Document, Type, UrlDocument), as.character),
+      dplyr::across(dplyr::where(is.character), ~ dplyr::if_else(trimws(.) == "", NA_character_, trimws(.))),
+      Error = FALSE
+    ) %>% dplyr::select(
+      HashDocument, Seq, Description, Document, Type, Size, UrlDocument, Error
+    ), silent = TRUE)
 
-  Sys.sleep(.101)
+  if (inherits(out_, "try-error")) {
+    return(error_table_document_link())
+  }
+
   return(out_)
 }
 
@@ -577,13 +618,11 @@ get_processed_documents <- function(.dir) {
 #'
 #' @param .url URL of the document
 #' @param .user User agent string
-#' @param .workers Number of parallel workers
 #'
 #' @return Tibble with document content and processed text
 #'
 #' @keywords internal
-help_download_document <- function(.url, .user, .workers) {
-  Sys.sleep(1 / .workers + 0.01)
+help_download_document <- function(.url, .user) {
 
   # Get Call -- -- -- -- -- -- -- -- -- -- -- -
   result_ <- make_get_request(.url, .user)
@@ -614,3 +653,32 @@ help_download_document <- function(.url, .user, .workers) {
   return(tibble::tibble(HTML = content_, TextRaw = text_raw_, TextMod = text_mod_))
 }
 
+get_to_be_processed_download_links <- function(.dir, .params, .workers) {
+  lp_ <- get_directories(.dir)
+  arr_ <- arrow::open_dataset(lp_$DocumentData$Main)
+  if (nrow(arr_) == 0) {
+    prc_ <- NA_character_
+  } else {
+    prc_ <- arr_ %>%
+      dplyr::distinct(HashDocument) %>%
+      dplyr::collect() %>%
+      dplyr::pull(HashDocument)
+  }
+
+
+  arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
+    filter_edgar_data(.params) %>%
+    dplyr::filter(!HashDocument %in% prc_) %>%
+    dplyr::select(HashDocument, Year, Quarter, YearQuarter, CIK, Type, UrlDocument) %>%
+    dplyr::arrange(CIK, YearQuarter) %>%
+    dplyr::collect() %>%
+    dplyr::mutate(ext = tools::file_ext(UrlDocument)) %>%
+    dplyr::filter(!ext == "") %>%
+    dplyr::select(-ext) %>%
+    dplyr::mutate(
+      Split = ceiling(dplyr::row_number() / .workers),
+      .before = HashDocument
+    ) %>%
+    arrow::write_parquet(lp_$DocumentData$Temporary)
+
+}
