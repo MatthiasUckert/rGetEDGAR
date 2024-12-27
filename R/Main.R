@@ -156,7 +156,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
     print_verbose("Document Index Complete", TRUE, "\r")
     return(invisible(NULL))
   } else {
-    idx_ <- sort(dplyr::collect(dplyr::distinct(arr_, Split))[["Split"]])
+    yqtr_ <- sort(dplyr::collect(dplyr::distinct(arr_, YearQuarter))[["YearQuarter"]])
   }
 
   last_time_ <- Sys.time()
@@ -164,46 +164,54 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 
 
   future::plan("multisession", workers = .workers)
-  for (i in idx_) {
+  for (yq in yqtr_) {
+    year_quartr_ <- yq
+    arr_ <- arrow::open_dataset(lp_$DocumentLinks$Temporary) %>%
+      dplyr::filter(YearQuarter == year_quartr_)
+    idx_ <- sort(dplyr::collect(dplyr::distinct(arr_, Split))[["Split"]])
+    for (i in idx_) {
+      wait_info_ <- loop_wait_time(last_time_, .workers)
+      last_time_ <- wait_info_$new_time
+      msg_loop_ <- format_loop(i, length(idx_), .workers)
+      msg_time_ <- format_time(init_time_, i, length(idx_))
+      print_verbose(paste(msg_loop_, msg_time_, wait_info_$msg, sep = " | "), .verbose, "\r")
 
-    wait_info_ <- loop_wait_time(last_time_, .workers)
-    last_time_ <- wait_info_$new_time
-    msg_loop_ <- format_loop(i, length(idx_), .workers)
-    msg_time_ <- format_time(init_time_, i, length(idx_))
-    print_verbose(paste(msg_loop_, msg_time_, wait_info_$msg, sep = " | "), .verbose, "\r")
+      use_ <- dplyr::collect(dplyr::filter(arr_, Split == i))
+      use_ <- dplyr::distinct(use_, HashIndex, .keep_all = TRUE)
 
-    use_ <- dplyr::collect(dplyr::filter(arr_, Split == i))
-    use_ <- dplyr::distinct(use_, HashIndex, .keep_all = TRUE)
+      tab_ <- furrr::future_map(
+        .x = purrr::set_names(use_$UrlIndexPage, use_$HashIndex),
+        .f = ~ help_get_document_link(.url = .x, .user),
+        .options = furrr::furrr_options(seed = TRUE)
+      ) %>%
+        dplyr::bind_rows(.id = "HashIndex") %>%
+        dplyr::filter(!Error)
 
-    tab_ <- furrr::future_map(
-      .x = purrr::set_names(use_$UrlIndexPage, use_$HashIndex),
-      .f = ~ help_get_document_link(.url = .x, .user),
-      .options = furrr::furrr_options(seed = TRUE)
-    ) %>% dplyr::bind_rows(.id = "HashIndex") %>%
-      dplyr::filter(!Error)
+      if (nrow(tab_) == 0) {
+        print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
+        next
+      }
 
-    if (nrow(tab_) == 0) {
-      print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
-      next
+      out_ <- try(tab_ %>%
+        dplyr::left_join(use_, by = dplyr::join_by(HashIndex), relationship = "many-to-one") %>%
+        dplyr::select(
+          HashIndex, HashDocument, CIK,
+          Year, Quarter, YearQuarter,
+          Seq, Description, Document, Type, Size, UrlDocument
+        ), silent = TRUE)
+
+      if (inherits(out_, "try-error")) {
+        print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
+        next
+      }
+
+      # Write Output -- -- -- -- -- -- -- -- -- -
+      suppressWarnings(write_document_links_to_sqlite(.dir, out_))
+      backup_document_links(.dir)
     }
-
-    out_ <- try(tab_ %>%
-      dplyr::left_join(use_, by = dplyr::join_by(HashIndex), relationship = "many-to-one") %>%
-      dplyr::select(
-        HashIndex, HashDocument, CIK,
-        Year, Quarter, YearQuarter,
-        Seq, Description, Document, Type, Size, UrlDocument
-      ), silent = TRUE)
-
-    if (inherits(out_, "try-error")) {
-      print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
-      next
-    }
-
-    # Write Output -- -- -- -- -- -- -- -- -- -
-    suppressWarnings(write_document_links_to_sqlite(.dir, out_))
-    backup_document_links(.dir)
   }
+
+
 
   suppressWarnings(write_document_links_to_parquet(.dir))
   future::plan("default")

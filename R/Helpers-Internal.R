@@ -314,13 +314,14 @@ get_to_be_processed_master_index <- function(.dir, .params, .workers) {
     filter_edgar_data(.params) %>%
     dplyr::filter(!HashIndex %in% prc_) %>%
     dplyr::select(HashIndex, Year, Quarter, YearQuarter, CIK, UrlIndexPage) %>%
-    dplyr::arrange(CIK, YearQuarter) %>%
+    dplyr::arrange(YearQuarter, CIK) %>%
     dplyr::collect() %>%
+    dplyr::group_by(YearQuarter) %>%
     dplyr::mutate(
       Split = ceiling(dplyr::row_number() / .workers),
       .before = HashIndex
     ) %>%
-    arrow::write_parquet(lp_$DocumentLinks$Temporary)
+    arrow::write_dataset(lp_$DocumentLinks$Temporary)
 
 }
 

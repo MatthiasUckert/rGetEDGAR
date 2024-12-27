@@ -32,3 +32,6 @@ Imports:
     tibble,
     tidyr,
     zip
+Depends: 
+    R (>= 3.5)
+LazyData: true
