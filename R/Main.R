@@ -150,10 +150,11 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   params_ <- get_edgar_params(.from, .to, .ciks)
   get_to_be_processed_master_index(.dir, params_, .workers)
 
-  arr_ <- arrow::open_dataset(lp_$DocumentLinks$Temporary)
+  tmp_ <- lp_$DocumentLinks$Temporary
+  arr_ <- arrow::open_dataset(tmp_)
 
   if (nrow(arr_) == 0) {
-    print_verbose("Document Index Complete", TRUE, "\r")
+    print_verbose("DocumentLinks Index Complete", TRUE, "\r")
     return(invisible(NULL))
   } else {
     yqtr_ <- sort(dplyr::collect(dplyr::distinct(arr_, YearQuarter))[["YearQuarter"]])
@@ -164,16 +165,20 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 
 
   future::plan("multisession", workers = .workers)
-  for (yq in yqtr_) {
-    year_quartr_ <- yq
-    arr_ <- arrow::open_dataset(lp_$DocumentLinks$Temporary) %>%
-      dplyr::filter(YearQuarter == year_quartr_)
-    idx_ <- sort(dplyr::collect(dplyr::distinct(arr_, Split))[["Split"]])
-    for (i in idx_) {
+  i = j = 1
+  for (i in seq_len(length(yqtr_))) {
+    idx_ <- arrow::open_dataset(tmp_) %>%
+      dplyr::filter(YearQuarter == yqtr_[i]) %>%
+      dplyr::distinct(Split) %>%
+      dplyr::arrange(Split) %>%
+      dplyr::collect() %>%
+      dplyr::pull(Split)
+
+    for (j in idx_) {
       wait_info_ <- loop_wait_time(last_time_, .workers)
       last_time_ <- wait_info_$new_time
-      msg_loop_ <- format_loop(i, length(idx_), .workers)
-      msg_time_ <- format_time(init_time_, i, length(idx_))
+      msg_loop_ <- paste0(yqtr_[i], ": ", format_loop(j, length(idx_), .workers))
+      msg_time_ <- format_time(init_time_, j, length(idx_))
       print_verbose(paste(msg_loop_, msg_time_, wait_info_$msg, sep = " | "), .verbose, "\r")
 
       use_ <- dplyr::collect(dplyr::filter(arr_, Split == i))
@@ -357,7 +362,7 @@ if (FALSE) {
 
   edgar_get_master_index(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = "MatthiasUckert@Outlook.com",
+    .user = "PeterParker@Outlook.com",
     .from = NULL,
     .to = NULL,
     .verbose = TRUE
@@ -365,9 +370,9 @@ if (FALSE) {
 
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = "MatthiasUckert@Outlook.com",
+    .user = "PeterParker@Outlook.com",
     .from = 1995.1,
-    .to = 1995.4,
+    .to = 1995.2,
     .ciks = NULL,
     .workers = 10L,
     .verbose = TRUE
@@ -375,7 +380,7 @@ if (FALSE) {
 
   edgar_download_document(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = "MatthiasUckert@Outlook.com",
+    .user = "PeterParker@Outlook.com",
     .from = 1995.1,
     .to = 1995.4,
     .ciks = NULL,

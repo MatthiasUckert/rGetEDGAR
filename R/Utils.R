@@ -139,7 +139,7 @@ format_time <- function(.t0, .i, .n) {
 #'         of queries to process (.n * .workers)
 #' @keywords internal
 format_loop <- function(.i, .n, .workers) {
-  paste0("Query: ", format_number(.i * .workers), "/", format_number(.n * .workers))
+  paste0(format_number(.i * .workers), "/", format_number(.n * .workers))
 }
 
 #' Manage Rate Limiting Wait Time
