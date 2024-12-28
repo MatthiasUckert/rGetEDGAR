@@ -167,6 +167,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   future::plan("multisession", workers = .workers)
   i = j = 1
   for (i in seq_len(length(yqtr_))) {
+
     idx_ <- arrow::open_dataset(tmp_) %>%
       dplyr::filter(YearQuarter == yqtr_[i]) %>%
       dplyr::distinct(Split) %>%
@@ -181,7 +182,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       msg_time_ <- format_time(init_time_, j, length(idx_))
       print_verbose(paste(msg_loop_, msg_time_, wait_info_$msg, sep = " | "), .verbose, "\r")
 
-      use_ <- dplyr::collect(dplyr::filter(arr_, Split == i))
+      use_ <- dplyr::collect(dplyr::filter(arr_, Split == j))
       use_ <- dplyr::distinct(use_, HashIndex, .keep_all = TRUE)
 
       tab_ <- furrr::future_map(
