@@ -143,21 +143,24 @@ edgar_get_master_index <- function(.dir, .user, .from = NULL, .to = NULL, .verbo
 #' @export
 edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .workers = 1L, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
+  tmp_ <- lp_$DocumentLinks$Temporary
 
   initial_document_links_database(.dir)
   Sys.sleep(1)
 
   params_ <- get_edgar_params(.from, .to, .ciks)
+  print_verbose("Retrieving to be processed document links", .verbose, "\r")
   get_to_be_processed_master_index(.dir, params_, .workers)
 
-  tmp_ <- lp_$DocumentLinks$Temporary
-  arr_ <- arrow::open_dataset(tmp_)
-
-  if (nrow(arr_) == 0) {
+  if (nrow(arrow::open_dataset(tmp_)) == 0) {
     print_verbose("DocumentLinks Index Complete", TRUE, "\r")
     return(invisible(NULL))
   } else {
-    yqtr_ <- sort(dplyr::collect(dplyr::distinct(arr_, YearQuarter))[["YearQuarter"]])
+    yqtr_ <- arrow::open_dataset(tmp_) %>%
+      dplyr::distinct(YearQuarter) %>%
+      dplyr::arrange(YearQuarter) %>%
+      dplyr::collect() %>%
+      dplyr::pull(YearQuarter)
   }
 
   last_time_ <- Sys.time()
@@ -167,6 +170,8 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   future::plan("multisession", workers = .workers)
   i = j = 1
   for (i in seq_len(length(yqtr_))) {
+
+    arr_ <- dplyr::filter(arrow::open_dataset(tmp_), YearQuarter == yqtr_[i])
 
     idx_ <- arrow::open_dataset(tmp_) %>%
       dplyr::filter(YearQuarter == yqtr_[i]) %>%
