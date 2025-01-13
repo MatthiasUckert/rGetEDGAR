@@ -9,6 +9,7 @@ edgar_read_master_index(
   .from = NULL,
   .to = NULL,
   .ciks = NULL,
+  .formtypes = NULL,
   .collect = TRUE
 )
 }
@@ -22,6 +23,8 @@ If NULL, defaults to 1993.1}
 If NULL, defaults to current quarter}
 
 \item{.ciks}{Character vector of CIK numbers to filter for specific companies}
+
+\item{.formtypes}{Character vector of FormTypes}
 
 \item{.collect}{Logical indicating whether to collect the data into memory (TRUE)
 or return an Arrow Dataset (FALSE)}

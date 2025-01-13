@@ -93,7 +93,7 @@ edgar_get_master_index <- function(.dir, .user, .from = NULL, .to = NULL, .verbo
     arrow::write_parquet(lp_$MasterIndex$Parquet)
 
   # Diconnect Database -- -- -- -- -- -- -- ---
-  DBI::dbDisconnect(con_master_)
+  suppressWarnings(DBI::dbDisconnect(con_master_))
   on.exit(DBI::dbDisconnect(con_master_))
 
   print_verbose("Master Index Complete", TRUE, "\r")
@@ -110,6 +110,7 @@ edgar_get_master_index <- function(.dir, .user, .from = NULL, .to = NULL, .verbo
 #' @param .from Numeric value specifying the start year.quarter (e.g., 2020.1 for Q1 2020)
 #' @param .to Numeric value specifying the end year.quarter
 #' @param .ciks Character vector of CIK numbers to filter for specific companies
+#' @param .formtypes Character vector of FormTypes
 #' @param .workers Integer specifying the number of parallel workers for downloading
 #' @param .verbose Logical indicating whether to print progress messages
 #'
@@ -141,14 +142,15 @@ edgar_get_master_index <- function(.dir, .user, .from = NULL, .to = NULL, .verbo
 #' }
 #'
 #' @export
-edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .workers = 1L, .verbose = TRUE) {
+edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .workers = 1L, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
-  tmp_ <- lp_$DocumentLinks$Temporary
+  tmp_ <- lp_$Temporary$DocumentLinks
 
   initial_document_links_database(.dir)
+  initial_landing_page_database(.dir)
   Sys.sleep(1)
 
-  params_ <- get_edgar_params(.from, .to, .ciks)
+  params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
   print_verbose("Retrieving to be processed document links", .verbose, "\r")
   get_to_be_processed_master_index(.dir, params_, .workers)
 
@@ -190,42 +192,62 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       use_ <- dplyr::collect(dplyr::filter(arr_, Split == j))
       use_ <- dplyr::distinct(use_, HashIndex, .keep_all = TRUE)
 
-      tab_ <- furrr::future_map(
+      # .url <- purrr::set_names(use_$UrlIndexPage, use_$HashIndex)[[1]]
+      lst_ <- furrr::future_map(
         .x = purrr::set_names(use_$UrlIndexPage, use_$HashIndex),
         .f = ~ help_get_document_link(.url = .x, .user),
         .options = furrr::furrr_options(seed = TRUE)
-      ) %>%
-        dplyr::bind_rows(.id = "HashIndex") %>%
-        dplyr::filter(!Error)
+      ) %>% purrr::transpose()
 
-      if (nrow(tab_) == 0) {
+      tab_links_ <- dplyr::bind_rows(lst_$DocumentLinks, .id = "HashIndex")
+      tab_html_ <- dplyr::bind_rows(lst_$LangingPage, .id = "HashIndex")
+
+      if (nrow(out_links_) == 0) {
         print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
         next
       }
 
-      out_ <- try(tab_ %>%
+      out_links_ <- try(tab_links_ %>%
+        dplyr::mutate(Error = as.integer(Error)) %>%
         dplyr::left_join(use_, by = dplyr::join_by(HashIndex), relationship = "many-to-one") %>%
         dplyr::select(
           HashIndex, HashDocument, CIK,
           Year, Quarter, YearQuarter,
-          Seq, Description, Document, Type, Size, UrlDocument
+          Seq, Description, Document, Type, Size, UrlDocument,
+          Error
         ), silent = TRUE)
 
-      if (inherits(out_, "try-error")) {
+      out_html_ <- try(tab_html_ %>%
+        dplyr::mutate(Error = as.integer(Error)) %>%
+        dplyr::left_join(use_, by = dplyr::join_by(HashIndex), relationship = "many-to-one") %>%
+        dplyr::select(
+          HashIndex, CIK,
+          Year, Quarter, YearQuarter,
+          HTML, Error
+        ), silent = TRUE)
+
+      if (inherits(out_links_, "try-error")) {
+        print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
+        next
+      }
+
+      if (inherits(out_html_, "try-error")) {
         print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
         next
       }
 
       # Write Output -- -- -- -- -- -- -- -- -- -
-      suppressWarnings(write_document_links_to_sqlite(.dir, out_))
+      suppressWarnings(write_document_links_to_sqlite(.dir, .tab = out_links_))
+      suppressWarnings(write_landing_page_to_sqlite(.dir, out_html_))
       backup_document_links(.dir)
+      backup_landing_page(.dir)
     }
   }
-
+  future::plan("default")
 
 
   suppressWarnings(write_document_links_to_parquet(.dir))
-  future::plan("default")
+  suppressWarnings(write_landing_page_to_parquet(.dir))
   suppressWarnings(invisible(on.exit(future::plan("default"))))
   fs::file_delete(lp_$DocumentLinks$Temporary)
 }
@@ -242,7 +264,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 #' @param .from Numeric value specifying the start year.quarter (e.g., 2020.1 for Q1 2020)
 #' @param .to Numeric value specifying the end year.quarter
 #' @param .ciks Character vector of CIK numbers to filter for specific companies
-#' @param .types Character vector of document types to filter (e.g., "10-K", "10-Q")
+#' @param .formtypes Character vector of document types to filter (e.g., "10-K", "10-Q")
 #' @param .workers Integer specifying the number of parallel workers for downloading
 #' @param .verbose Logical indicating whether to print progress messages
 #'
@@ -269,16 +291,16 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 #'   .from = 2020.1,
 #'   .to = 2021.4,
 #'   .ciks = c("0000320193"),  # Apple Inc
-#'   .types = c("10-K", "10-Q"),
+#'   .formtypes = c("10-K", "10-Q"),
 #'   .workers = 4
 #' )
 #' }
 #'
 #' @export
-edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .types = NULL, .workers = 1L, .verbose = TRUE) {
+edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .workers = 1L, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
 
-  params_ <- get_edgar_params(.from, .to, .ciks, .types)
+  params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
   get_to_be_processed_download_links(.dir, params_, .workers)
 
   arr_ <- arrow::open_dataset(lp_$DocumentData$Temporary)
@@ -347,24 +369,6 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
 # DeBug ---------------------------------------------------------------------------------------
 if (FALSE) {
   devtools::load_all(".")
-  .dir <- fs::dir_create("../_package_debug/rGetEDGAR")
-  .verbose <- TRUE
-  .years <- 2000:2001
-  .ciks <- "0001000015"
-  .user <- "Matt@domain.com"
-  .url <- "https://www.sec.gov/Archives/edgar/data/1397047/000121390019003916/0001213900-19-003916-index.htm"
-  .from <- 2000.1
-  .to <- 2001.4
-}
-
-
-# PipeLine ------------------------------------------------------------------------------------
-if (FALSE) {
-  devtools::load_all(".")
-  library(rGetEDGAR)
-  source("R/Helpers-External.R")
-  source("R/Helpers-Internal.R")
-  source("R/Utils.R")
 
   edgar_get_master_index(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
@@ -380,18 +384,21 @@ if (FALSE) {
     .from = 1995.1,
     .to = 1995.2,
     .ciks = NULL,
+    .formtypes = c("10-K"),
     .workers = 10L,
     .verbose = TRUE
   )
 
-  edgar_download_document(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = "PeterParker@Outlook.com",
-    .from = 1995.1,
-    .to = 1995.4,
-    .ciks = NULL,
-    .types = NULL,
-    .workers = 10L,
-    .verbose = TRUE
-  )
+
+#
+#   edgar_download_document(
+#     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+#     .user = "PeterParker@Outlook.com",
+#     .from = 1995.1,
+#     .to = 1995.4,
+#     .ciks = NULL,
+#     .types = NULL,
+#     .workers = 10L,
+#     .verbose = TRUE
+#   )
 }

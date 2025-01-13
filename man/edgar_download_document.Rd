@@ -10,7 +10,7 @@ edgar_download_document(
   .from = NULL,
   .to = NULL,
   .ciks = NULL,
-  .types = NULL,
+  .formtypes = NULL,
   .workers = 1L,
   .verbose = TRUE
 )
@@ -26,7 +26,7 @@ edgar_download_document(
 
 \item{.ciks}{Character vector of CIK numbers to filter for specific companies}
 
-\item{.types}{Character vector of document types to filter (e.g., "10-K", "10-Q")}
+\item{.formtypes}{Character vector of document types to filter (e.g., "10-K", "10-Q")}
 
 \item{.workers}{Integer specifying the number of parallel workers for downloading}
 
@@ -64,7 +64,7 @@ edgar_download_document(
   .from = 2020.1,
   .to = 2021.4,
   .ciks = c("0000320193"),  # Apple Inc
-  .types = c("10-K", "10-Q"),
+  .formtypes = c("10-K", "10-Q"),
   .workers = 4
 )
 }

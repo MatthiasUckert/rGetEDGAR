@@ -3,6 +3,7 @@
 .tab_sec_form_type <- rvest::read_html(.url_form_type) %>%
   rvest::html_elements("table") %>%
   rvest::html_table()
+
 tab_sec_form_type <- .tab_sec_form_type[[1]] %>%
   janitor::clean_names(case = "big_camel") %>%
   dplyr::rename(FormTypeStandard = FormType)

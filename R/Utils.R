@@ -12,21 +12,29 @@
 get_directories <- function(.dir) {
   dir_ <- fs::dir_create(.dir)
   dir_master_ <- fs::dir_create(file.path(dir_, "MasterIndex"))
+  dir_landing_ <- fs::dir_create(file.path(dir_, "LandingPage"))
   dir_links_ <- fs::dir_create(file.path(dir_, "DocumentLinks"))
+  dir_temp_ <- fs::dir_create(file.path(dir_, "Temporary"))
+
   list(
     MasterIndex = list(
       Sqlite = file.path(dir_master_, "MasterIndex.sqlite"),
       Parquet = file.path(dir_master_, "MasterIndex.parquet")
     ),
+    LandingPage = list(
+      Sqlite = file.path(dir_landing_, "LandingPage.sqlite"),
+      Parquet = file.path(dir_landing_, "LandingPage.parquet"),
+      BackUps = fs::dir_create(file.path(dir_landing_, "LandingPageBackUps"))
+    ),
     DocumentLinks = list(
       Sqlite = file.path(dir_links_, "DocumentLinks.sqlite"),
       Parquet = file.path(dir_links_, "DocumentLinks.parquet"),
-      Temporary = file.path(dir_links_, "TemporaryProcessing.parquet"),
-      BackUps = fs::dir_create(file.path(dir_links_, "BackUps"))
+      BackUps = fs::dir_create(file.path(dir_links_, "DocumentLinksBackUps"))
     ),
-    DocumentData = list(
-      Main = fs::dir_create(file.path(dir_, "DocumentData", "Main")),
-      Temporary = file.path(dir_, "DocumentData", "TemporaryProcessing.parquet")
+    DocumentData = fs::dir_create(file.path(dir_, "DocumentData", "Main")),
+    Temporary = list(
+      DocumentLinks = file.path(dir_temp_, "TemporaryDocumentLinks.parquet"),
+      DocumentData = file.path(dir_temp_, "TemporaryDocumentData.parquet")
     )
   )
 }

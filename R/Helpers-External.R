@@ -10,6 +10,7 @@
 #' @param .to Numeric value specifying the end year.quarter.
 #'           If NULL, defaults to current quarter
 #' @param .ciks Character vector of CIK numbers to filter for specific companies
+#' @param .formtypes Character vector of FormTypes
 #' @param .collect Logical indicating whether to collect the data into memory (TRUE)
 #'                or return an Arrow Dataset (FALSE)
 #'
@@ -45,9 +46,9 @@
 #'   .collect = FALSE
 #' )
 #' }
-edgar_read_master_index <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL, .collect = TRUE) {
+edgar_read_master_index <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .collect = TRUE) {
   # Get validated parameters
-  params <- get_edgar_params(.from = .from, .to = .to, .ciks = .ciks)
+  params <- get_edgar_params(.from, .to, .ciks, .formtypes)
 
   # Get directory structure
   lp_ <- get_directories(.dir)
@@ -77,7 +78,7 @@ edgar_read_master_index <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL
 #' @param .to Numeric value specifying the end year.quarter.
 #'           If NULL, defaults to current quarter
 #' @param .ciks Character vector of CIK numbers to filter for specific companies
-#' @param .types Character vector of document types to filter (e.g., "10-K", "10-Q")
+#' @param .formtypes Character vector of document types to filter (e.g., "10-K", "10-Q")
 #' @param .collect Logical indicating whether to collect the data into memory (TRUE)
 #'                or return an Arrow Dataset (FALSE)
 #'
@@ -114,9 +115,9 @@ edgar_read_master_index <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL
 #'   .collect = FALSE
 #' )
 #' }
-edgar_read_document_links <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL, .types = NULL, .collect = TRUE) {
+edgar_read_document_links <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .collect = TRUE) {
   # Get validated parameters
-  params <- get_edgar_params(.from = .from, .to = .to, .ciks = .ciks, .types = .types)
+  params <- get_edgar_params(.from, .to, .ciks, .formtypes)
 
   # Get directory structure
   lp_ <- get_directories(.dir)
@@ -152,4 +153,18 @@ standardize_string <- function(.str) {
   str_ <- stringi::stri_trans_general(str_, "Latin-ASCII")
   str_ <- trimws(str_)
   return(str_)
+}
+
+
+
+# Debug ---------------------------------------------------------------------------------------
+if (FALSE) {
+  edgar_read_master_index(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .from = NULL,
+    .to = NULL,
+    .ciks = NULL,
+    .formtypes = c("10-K", "10-Q"),
+    .collect = TRUE
+  )
 }

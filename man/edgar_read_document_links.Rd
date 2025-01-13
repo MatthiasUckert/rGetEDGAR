@@ -9,7 +9,7 @@ edgar_read_document_links(
   .from = NULL,
   .to = NULL,
   .ciks = NULL,
-  .types = NULL,
+  .formtypes = NULL,
   .collect = TRUE
 )
 }
@@ -24,7 +24,7 @@ If NULL, defaults to current quarter}
 
 \item{.ciks}{Character vector of CIK numbers to filter for specific companies}
 
-\item{.types}{Character vector of document types to filter (e.g., "10-K", "10-Q")}
+\item{.formtypes}{Character vector of document types to filter (e.g., "10-K", "10-Q")}
 
 \item{.collect}{Logical indicating whether to collect the data into memory (TRUE)
 or return an Arrow Dataset (FALSE)}
