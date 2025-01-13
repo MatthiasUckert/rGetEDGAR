@@ -152,18 +152,25 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 
   params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
   print_verbose("Retrieving to be processed document links", .verbose, "\r")
-  get_to_be_processed_master_index(.dir, params_, .workers)
+  get_to_be_processed_master_index(.dir, .params = params_, .workers)
+
+  if (!file.exists(tmp_))  {
+    print_verbose("DocumentLinks Index Complete", TRUE, "\r")
+    return(invisible(NULL))
+    try(fs::file_delete(lp_$Temporary$DocumentLinks), silent = TRUE)
+  }
 
   if (nrow(arrow::open_dataset(tmp_)) == 0) {
     print_verbose("DocumentLinks Index Complete", TRUE, "\r")
     return(invisible(NULL))
-  } else {
-    yqtr_ <- arrow::open_dataset(tmp_) %>%
-      dplyr::distinct(YearQuarter) %>%
-      dplyr::arrange(YearQuarter) %>%
-      dplyr::collect() %>%
-      dplyr::pull(YearQuarter)
+    try(fs::file_delete(lp_$Temporary$DocumentLinks), silent = TRUE)
   }
+
+  yqtr_ <- arrow::open_dataset(tmp_) %>%
+    dplyr::distinct(YearQuarter) %>%
+    dplyr::arrange(YearQuarter) %>%
+    dplyr::collect() %>%
+    dplyr::pull(YearQuarter)
 
   last_time_ <- Sys.time()
   init_time_ <- Sys.time()
@@ -249,7 +256,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   suppressWarnings(write_document_links_to_parquet(.dir))
   suppressWarnings(write_landing_page_to_parquet(.dir))
   suppressWarnings(invisible(on.exit(future::plan("default"))))
-  fs::file_delete(lp_$DocumentLinks$Temporary)
+  try(fs::file_delete(lp_$Temporary$DocumentLinks), silent = TRUE)
 }
 
 
@@ -301,7 +308,11 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
   lp_ <- get_directories(.dir)
 
   params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
-  get_to_be_processed_download_links(.dir, params_, .workers)
+  get_to_be_processed_download_links(
+    .dir = .dir,
+    .params = params_,
+    .workers = .workers
+    )
 
   arr_ <- arrow::open_dataset(lp_$DocumentData$Temporary)
 
@@ -382,7 +393,7 @@ if (FALSE) {
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .user = "PeterParker@Outlook.com",
-    .from = 1995.1,
+    .from = 1995.2,
     .to = 1995.2,
     .ciks = NULL,
     .formtypes = c("10-K"),
