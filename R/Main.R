@@ -202,7 +202,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       tab_links_ <- dplyr::bind_rows(lst_$DocumentLinks, .id = "HashIndex")
       tab_html_ <- dplyr::bind_rows(lst_$LangingPage, .id = "HashIndex")
 
-      if (nrow(out_links_) == 0) {
+      if (nrow(tab_links_) == 0) {
         print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
         next
       }
@@ -369,6 +369,7 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
 # DeBug ---------------------------------------------------------------------------------------
 if (FALSE) {
   devtools::load_all(".")
+  library(rGetEDGAR)
 
   edgar_get_master_index(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),

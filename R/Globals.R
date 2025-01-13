@@ -1,6 +1,6 @@
 utils::globalVariables(c(
   # General Variables
-  "Year", "Quarter", "YearQuarter", "CIK", "Type", "Split", "PathOut", "Error",
+  "Year", "Quarter", "YearQuarter", "CIK", "Type", "Split", "PathOut", "Error", "FormType",
 
   # Master Index Variables
   "UrlMasterIndex", "text", "Filename", "Cik", "UrlFullText",
