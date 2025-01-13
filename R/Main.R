@@ -173,12 +173,11 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
     dplyr::pull(YearQuarter)
 
   last_time_ <- Sys.time()
-  init_time_ <- Sys.time()
-
 
   future::plan("multisession", workers = .workers)
-  i = j = 1
+  # i = j = 1
   for (i in seq_len(length(yqtr_))) {
+    init_time_ <- Sys.time()
 
     arr_ <- dplyr::filter(arrow::open_dataset(tmp_), YearQuarter == yqtr_[i])
 
@@ -190,6 +189,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       dplyr::pull(Split)
 
     for (j in idx_) {
+
       wait_info_ <- loop_wait_time(last_time_, .workers)
       last_time_ <- wait_info_$new_time
       msg_loop_ <- paste0(yqtr_[i], ": ", format_loop(j, length(idx_), .workers))
@@ -393,8 +393,8 @@ if (FALSE) {
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .user = "PeterParker@Outlook.com",
-    .from = 1995.2,
-    .to = 1995.2,
+    .from = 1993.1,
+    .to = 1996.4,
     .ciks = NULL,
     .formtypes = c("10-K"),
     .workers = 10L,
