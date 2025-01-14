@@ -257,6 +257,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   suppressWarnings(write_landing_page_to_parquet(.dir))
   suppressWarnings(invisible(on.exit(future::plan("default"))))
   try(fs::file_delete(lp_$Temporary$DocumentLinks), silent = TRUE)
+  on.exit(try(fs::file_delete(lp_$Temporary$DocumentLinks), silent = TRUE))
 }
 
 
@@ -394,9 +395,9 @@ if (FALSE) {
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .user = "PeterParker@Outlook.com",
     .from = 1993.1,
-    .to = 1996.4,
+    .to = 2024.4,
     .ciks = NULL,
-    .formtypes = c("10-K"),
+    .formtypes = c("10-K", "10-Q"),
     .workers = 10L,
     .verbose = TRUE
   )
