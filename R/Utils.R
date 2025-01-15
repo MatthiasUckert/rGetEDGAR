@@ -31,7 +31,7 @@ get_directories <- function(.dir) {
       Parquet = file.path(dir_links_, "DocumentLinks.parquet"),
       BackUps = fs::dir_create(file.path(dir_links_, "DocumentLinksBackUps"))
     ),
-    DocumentData = fs::dir_create(file.path(dir_, "DocumentData", "Main")),
+    DocumentData = fs::dir_create(file.path(dir_, "DocumentData")),
     Temporary = list(
       DocumentLinks = file.path(dir_temp_, "TemporaryDocumentLinks.parquet"),
       DocumentData = file.path(dir_temp_, "TemporaryDocumentData.parquet")
@@ -206,7 +206,8 @@ loop_wait_time <- function(.last_time, .workers, .queries_per_second = 10) {
   new_time <- Sys.time()
 
   # Construct your desired string message
-  msg <- paste0(sprintf("Loop: %.2fs + %.2fs = %.2fs", Tloop, Twait, Ttotal), " (Target: ", needed_wait, "s)")
+  # msg <- paste0(sprintf("Loop: %.2fs + %.2fs = %.2fs", Tloop, Twait, Ttotal), " (Target: ", needed_wait, "s)")
+  msg <- sprintf("Loop: %.2fs", Ttotal)
 
   # Return a list
   list(

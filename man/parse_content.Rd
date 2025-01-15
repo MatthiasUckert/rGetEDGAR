@@ -4,7 +4,7 @@
 \alias{parse_content}
 \title{Parse HTTP Response Content}
 \usage{
-parse_content(.result)
+parse_content(.result, .type = c("text", "raw"))
 }
 \arguments{
 \item{.result}{httr response object}

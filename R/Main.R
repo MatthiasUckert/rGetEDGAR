@@ -163,7 +163,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   } else {
     arr0_ <- arrow::open_dataset(lp_$Temporary$DocumentLinks)
     num_ <- format(nrow(arr0_), big.mark = ",")
-    print_verbose(paste0("IndexLinks to be Processed: ", num_), TRUE, "\n\n")
+    print_verbose(paste0("IndexLinks to be Processed: ", num_), TRUE, "\n")
     yqtr_ <- pull_column(arr0_, YearQuarter)
   }
 
@@ -176,7 +176,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
     arr1_ <- dplyr::filter(arr0_, YearQuarter == yqtr_[i])
     idx_ <- pull_column(arr1_, Split)
 
-
+    print_verbose("", .verbose, "\n")
     for (j in idx_) {
       wait_info_ <- loop_wait_time(last_time_, .workers)
       last_time_ <- wait_info_$new_time
@@ -204,7 +204,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
         ) %>%
           purrr::transpose() %>%
           purrr::map(~ dplyr::bind_rows(.x, , .id = "HashIndex")),
-        timeout = 60,
+        timeout = 5,
         onTimeout = "error"
       ), silent = TRUE)
 
@@ -231,16 +231,15 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       write_link_data(.dir, out_htmls_, "LandingPage", "sqlite")
       backup_link_data(.dir, "DocumentLinks")
       backup_link_data(.dir, "LandingPage")
-
     }
     write_link_data(.dir, out_links_, "DocumentLinks", "parquet")
     write_link_data(.dir, out_htmls_, "LandingPage", "parquet")
-
   }
   on.exit(future::plan("default"))
   on.exit(write_link_data(.dir, out_links_, "DocumentLinks", "sqlite"))
   on.exit(write_link_data(.dir, out_htmls_, "LandingPage", "sqlite"))
 }
+
 
 
 #' Download SEC EDGAR Documents
@@ -256,7 +255,6 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 #' @param .ciks Character vector of CIK numbers to filter for specific companies
 #' @param .formtypes Character vector of document types to filter (e.g., "10-K", "10-Q")
 #' @param .doctypes Character vector of document types to filter (e.g., "10-K", "10-Q")
-#' @param .workers Integer specifying the number of parallel workers for downloading
 #' @param .verbose Logical indicating whether to print progress messages
 #'
 #' @details
@@ -288,85 +286,53 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 #' }
 #'
 #' @export
-edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .workers = 1L, .verbose = TRUE) {
+edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
 
   tab_ <- edgar_read_document_links(.dir, .from, .to, .ciks, .formtypes, .doctypes, FALSE) %>%
     dplyr::filter(Seq > 0) %>%
-    dplyr::collect()
-
-
-  params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
-
-
-
-
-
-  get_to_be_processed_download_links(
-    .dir = .dir,
-    .params = params_,
-    .workers = .workers
-  )
-
-  arr_ <- arrow::open_dataset(lp_$DocumentData$Temporary)
-
-  if (nrow(arr_) == 0) {
-    print_verbose("Document Index Complete", TRUE, "\r")
-    return(invisible(NULL))
-  } else {
-    idx_ <- sort(dplyr::collect(dplyr::distinct(arr_, Split))[["Split"]])
-  }
-
-  last_time_ <- Sys.time()
-  init_time_ <- Sys.time()
-
-
-  future::plan("multisession", workers = .workers)
-  for (i in idx_) {
-    wait_info_ <- loop_wait_time(last_time_, .workers)
-    last_time_ <- wait_info_$new_time
-    msg_loop_ <- format_loop(i, length(idx_), .workers)
-    msg_time_ <- format_time(init_time_, i, length(idx_))
-    print_verbose(paste(msg_loop_, msg_time_, wait_info_$msg, sep = " | "), .verbose, "\r")
-
-    use_ <- dplyr::collect(dplyr::filter(arr_, Split == i))
-    use_ <- dplyr::mutate(use_, PathOut = file.path(lp_$DocumentData$Main, paste0(CIK, ".parquet")))
-    use_ <- dplyr::distinct(use_, HashDocument, .keep_all = TRUE)
-
-    tab_ <- furrr::future_map(
-      .x = purrr::set_names(use_$UrlDocument, use_$HashDocument),
-      .f = ~ help_download_document(.x, .user),
-      .options = furrr::furrr_options(seed = TRUE),
-      .progress = FALSE
+    dplyr::filter(Error == 0) %>%
+    dplyr::arrange(CIK, YearQuarter) %>%
+    dplyr::collect() %>%
+    dplyr::mutate(
+      FileExt = tools::file_ext(UrlDocument),
+      OutExt = dplyr::case_when(
+        FileExt %in% c("htm", "xml", "xsd", "txt") ~ ".parquet",
+        FileExt %in% c("gif", "jpg", "pdf") ~ paste0(".", FileExt)
+      ),
+      DirOut = file.path(lp_$DocumentData, CIK),
+      PathOut = file.path(DirOut, paste0(HashDocument, OutExt))
     ) %>%
-      dplyr::bind_rows(.id = "HashDocument") %>%
-      dplyr::filter(!Error)
+    dplyr::filter(!FileExt == "") %>%
+    dplyr::filter(!file.exists(PathOut))
 
-    if (nrow(tab_) == 0) {
-      print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
-      next
+
+  t0_global <- Sys.time() # Keep track of overall time
+  n_total <- nrow(tab_) # Total number to process
+
+  for (i in seq_len(n_total)) {
+    t0_ <- Sys.time()
+    help_download_document(tab_[i, ], .user)
+    t1_ <- Sys.time()
+
+    # Rate limiting
+    ela_ <- as.numeric(difftime(t1_, t0_, units = "secs"))
+    if (ela_ < .1) {
+      Sys.sleep(.1)
     }
 
-    out_ <- try(
-      expr = tab_ %>%
-        dplyr::left_join(use_, by = "HashDocument", relationship = "one-to-one") %>%
-        dplyr::select(HashDocument, Year, Quarter, YearQuarter, CIK, Type, HTML, TextRaw, TextMod, PathOut),
-      silent = TRUE
+    # Calculate progress metrics
+    elapsed_total <- as.numeric(difftime(t1_, t0_global, units = "secs"))
+    rate <- i / elapsed_total
+    eta <- (n_total - i) / rate
+
+    cat(
+      "\rDocument:", format(i, big.mark = ","), "of", format(n_total, big.mark = ","),
+      "| Elapsed:", format(round(elapsed_total / 60, 1), big.mark = ","), "min",
+      "| ETA:",  format(round(eta / 60, 1), big.mark = ","), "min",
+      "|", round(rate, 1), "Docs/Sec                "
     )
-
-    if (inherits(out_, "try-error")) {
-      print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
-      next
-    }
-
-    write_document_data(out_)
   }
-
-  suppressWarnings(future::plan("default"))
-  suppressWarnings(on.exit(future::plan("default")))
-  fs::file_delete(lp_$DocumentData$Temporary)
-
-  print_verbose("All Documents Downloaded", TRUE, "\r")
 }
 
 
@@ -375,6 +341,7 @@ if (FALSE) {
   devtools::load_all(".")
   library(rGetEDGAR)
   forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A", "S1", "S4", "F1", "F4")
+  forms <- c("10-K", "20-F")
 
   # Master Index
   edgar_get_master_index(
@@ -398,7 +365,7 @@ if (FALSE) {
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .user = "PeterParker@Outlook.com",
-    .from = 2000.1,
+    .from = 2010.1,
     .to = 2024.4,
     .ciks = NULL,
     .formtypes = forms,
@@ -415,5 +382,4 @@ if (FALSE) {
     .doctypes = NULL,
     .collect = TRUE
   )
-
 }

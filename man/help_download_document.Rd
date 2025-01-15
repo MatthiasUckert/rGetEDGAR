@@ -2,19 +2,21 @@
 % Please edit documentation in R/Helpers-Internal.R
 \name{help_download_document}
 \alias{help_download_document}
-\title{Download Document}
+\title{Download and Save SEC EDGAR Documents}
 \usage{
-help_download_document(.url, .user)
+help_download_document(.doc_row, .user)
 }
 \arguments{
-\item{.url}{URL of the document}
+\item{.doc_row}{A row with download information}
 
-\item{.user}{User agent string}
+\item{.user}{Character string of the user agent}
 }
 \value{
-Tibble with document content and processed text
+A Document
 }
 \description{
-Downloads and processes a single document.
+Downloads and saves SEC EDGAR documents in appropriate formats based on their file extension.
+Handles text-based documents (htm, xml, xsd, txt) by converting them to parquet,
+and binary files (pdf, gif, jpg) by saving them directly.
 }
 \keyword{internal}

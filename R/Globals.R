@@ -14,5 +14,5 @@ utils::globalVariables(c(
   "AllRow", "AllTot", "AllPer", "Print", "data", "ext",
 
   # Document Content Variables
-  "HTML", "TextRaw", "TextMod"
+  "HTML", "TextRaw", "TextMod", "DirOut", "OutExt", "FileExt"
 ))

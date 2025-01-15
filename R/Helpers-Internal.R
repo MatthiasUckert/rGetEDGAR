@@ -130,8 +130,13 @@ make_get_request <- function(.url, .user) {
 #' @return Parsed content as text
 #'
 #' @keywords internal
-parse_content <- function(.result) {
-  try(httr::content(.result, as = "text", encoding = "UTF-8"), silent = TRUE)
+parse_content <- function(.result, .type = c("text", "raw")) {
+  if (.type == "text") {
+    try(httr::content(.result, as = "text", encoding = "UTF-8"), silent = TRUE)
+  } else {
+    try(httr::content(.result, "raw"), silent = TRUE)
+  }
+
 }
 
 # Get Master Index ----------------------------------------------------------------------------
@@ -618,7 +623,7 @@ help_get_document_link <- function(.url, .user) {
   if (!httr::status_code(result_) == 200) return(error_list)
 
 
-  content_ <- parse_content(result_)
+  content_ <- parse_content(result_, .type = "text")
   if (inherits(content_, "try-error")) return(error_list)
   if (is.na(content_)) return(error_list)
 
@@ -660,165 +665,210 @@ help_get_document_link <- function(.url, .user) {
 
 
 # Download Documents --------------------------------------------------------------------------
-#' Get Processed Documents
+
+#' Download and Save SEC EDGAR Documents
 #'
 #' @description
-#' Retrieves list of documents that have already been processed.
+#' Downloads and saves SEC EDGAR documents in appropriate formats based on their file extension.
+#' Handles text-based documents (htm, xml, xsd, txt) by converting them to parquet,
+#' and binary files (pdf, gif, jpg) by saving them directly.
 #'
-#' @param .dir Directory containing processed documents
+#' @param .doc_row A row with download information
+#' @param .user Character string of the user agent
 #'
-#' @return Vector of processed document hashes
-#'
+#' @return A Document
 #' @keywords internal
-get_processed_documents <- function(.dir) {
-  arr_ <- arrow::open_dataset(.dir)
-
-  if (nrow(arr_) == 0) {
-    return(NA_character_)
-  } else {
-    arr_ %>%
-      dplyr::distinct(HashDocument) %>%
-      dplyr::collect() %>%
-      dplyr::pull()
+help_download_document <- function(.doc_row, .user) {
+  if (file.exists(.doc_row$PathOut)) {
+    return(invisible(NULL))
   }
-}
+  # Create output directory if it doesn't exist
+  fs::dir_create(.doc_row$DirOut)
 
-
-#' Download Document
-#'
-#' @description
-#' Downloads and processes a single document.
-#'
-#' @param .url URL of the document
-#' @param .user User agent string
-#'
-#' @return Tibble with document content and processed text
-#'
-#' @keywords internal
-help_download_document <- function(.url, .user) {
-  # Get Call -- -- -- -- -- -- -- -- -- -- -- -
-  result_ <- make_get_request(.url, .user)
-
+  # Make HTTP request
+  result_ <- make_get_request(.doc_row$UrlDocument, .user)
   if (inherits(result_, "try-error") || !httr::status_code(result_) == 200) {
-    return(tibble::tibble(HTML = NA_character_, TextRaw = NA_character_, TextMod = NA_character_, Error = TRUE))
+    return(invisible(NULL))
   }
 
-  # Parse Content -- -- -- -- -- -- -- -- -- -
-  content_ <- parse_content(result_)
-  if (inherits(content_, "try-error") || is.na(content_)) {
-    return(tibble::tibble(HTML = NA_character_, TextRaw = NA_character_, TextMod = NA_character_, Error = TRUE))
+  type_ <- ifelse(.doc_row$OutExt == ".parquet", "text", "raw")
+  content_ <- parse_content(result_, type_)
+
+  if (inherits(content_, "try-error")) {
+    return(invisible(NULL))
   }
 
-
-  html_ <- try(rvest::read_html(content_, options = "HUGE"), silent = TRUE)
-  if (inherits(html_, "try-error")) {
-    return(tibble::tibble(HTML = content_, TextRaw = NA_character_, TextMod = NA_character_, Error = FALSE))
-  }
-
-  text_raw_ <- try(rvest::html_text(html_), silent = TRUE)
-  if (inherits(text_raw_, "try-error")) {
-    return(tibble::tibble(HTML = content_, TextRaw = NA_character_, TextMod = NA_character_, Error = FALSE))
-  }
-
-  text_mod_ <- standardize_string(text_raw_)
-
-  return(tibble::tibble(HTML = content_, TextRaw = text_raw_, TextMod = text_mod_, Error = FALSE))
-}
-
-#' Get Document Links To Be Downloaded
-#'
-#' @description
-#' Identifies and prepares document links that haven't been downloaded yet. The function:
-#' 1. Checks already downloaded documents in the main document data directory
-#' 2. Filters the document links dataset based on provided parameters
-#' 3. Excludes already downloaded documents
-#' 4. Prepares the data for parallel processing
-#'
-#' @param .dir Base directory for the SEC data storage
-#' @param .params List of filtering parameters from get_edgar_params()
-#' @param .workers Number of parallel workers to use for processing
-#'
-#' @return Writes a parquet file to the temporary directory containing links to be processed,
-#'         with an additional 'Split' column for parallel processing. Only includes
-#'         documents with valid file extensions.
-#'
-#' @keywords internal
-get_to_be_processed_download_links <- function(.dir, .params, .workers) {
-  lp_ <- get_directories(.dir)
-  arr_ <- arrow::open_dataset(lp_$DocumentData$Main)
-  if (nrow(arr_) == 0) {
-    prc_ <- NA_character_
+  if (type_ == "text") {
+    tibble::tibble(
+      HashDocument = .doc_row$HashDocument,
+      Text = content_
+    ) %>% arrow::write_parquet(.doc_row$PathOut)
   } else {
-    prc_ <- arr_ %>%
-      dplyr::distinct(HashDocument) %>%
-      dplyr::collect() %>%
-      dplyr::pull(HashDocument)
+    writeBin(content_, .doc_row$PathOut)
   }
-
-
-  arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
-    filter_edgar_data(.params) %>%
-    dplyr::filter(!HashDocument %in% prc_) %>%
-    dplyr::select(HashDocument, Year, Quarter, YearQuarter, CIK, Type, UrlDocument) %>%
-    dplyr::arrange(CIK, YearQuarter) %>%
-    dplyr::collect() %>%
-    dplyr::mutate(ext = tools::file_ext(UrlDocument)) %>%
-    dplyr::filter(!ext == "") %>%
-    dplyr::select(-ext) %>%
-    dplyr::mutate(
-      Split = ceiling(dplyr::row_number() / .workers),
-      .before = HashDocument
-    ) %>%
-    arrow::write_parquet(lp_$DocumentData$Temporary)
 }
 
-#' Write SEC Document Data to Parquet Files
+
+
+#' #' Get Processed Documents
+#' #'
+#' #' @description
+#' #' Retrieves list of documents that have already been processed.
+#' #'
+#' #' @param .dir Directory containing processed documents
+#' #'
+#' #' @return Vector of processed document hashes
+#' #'
+#' #' @keywords internal
+#' get_processed_documents <- function(.dir) {
+#'   arr_ <- arrow::open_dataset(.dir)
 #'
-#' @description
-#' Writes or appends SEC document data to company-specific Parquet files. The function
-#' organizes documents by CIK (company identifier) and handles both new file creation
-#' and updates to existing files.
+#'   if (nrow(arr_) == 0) {
+#'     return(NA_character_)
+#'   } else {
+#'     arr_ %>%
+#'       dplyr::distinct(HashDocument) %>%
+#'       dplyr::collect() %>%
+#'       dplyr::pull()
+#'   }
+#' }
 #'
-#' @param .tab A tibble/data frame containing document data with the following columns:
-#'   \itemize{
-#'     \item HashDocument: Unique identifier for the document
-#'     \item Year, Quarter, YearQuarter: Time period identifiers
-#'     \item CIK: Company identifier
-#'     \item Type: Document type
-#'     \item HTML: Raw HTML content
-#'     \item TextRaw: Extracted raw text
-#'     \item TextMod: Processed/standardized text
-#'     \item PathOut: Full path for the output Parquet file
+#'
+#' #' Download Document
+#' #'
+#' #' @description
+#' #' Downloads and processes a single document.
+#' #'
+#' #' @param .url URL of the document
+#' #' @param .user User agent string
+#' #'
+#' #' @return Tibble with document content and processed text
+#' #'
+#' #' @keywords internal
+#' help_download_document <- function(.url, .user) {
+#'   # Get Call -- -- -- -- -- -- -- -- -- -- -- -
+#'   result_ <- make_get_request(.url, .user)
+#'
+#'   if (inherits(result_, "try-error") || !httr::status_code(result_) == 200) {
+#'     return(tibble::tibble(HTML = NA_character_, TextRaw = NA_character_, TextMod = NA_character_, Error = TRUE))
 #'   }
 #'
-#' @details
-#' The function:
-#' 1. Splits the input data by PathOut (company-specific file paths)
-#' 2. For each company:
-#'    - If a Parquet file exists: Reads existing data and appends new data
-#'    - If no file exists: Creates a new Parquet file
-#' 3. Removes the PathOut column before writing
-#' 4. Maintains one Parquet file per company (CIK)
+#'   # Parse Content -- -- -- -- -- -- -- -- -- -
+#'   content_ <- parse_content(result_)
+#'   if (inherits(content_, "try-error") || is.na(content_)) {
+#'     return(tibble::tibble(HTML = NA_character_, TextRaw = NA_character_, TextMod = NA_character_, Error = TRUE))
+#'   }
 #'
-#' @note
-#' - The function assumes the parent directories in PathOut already exist
-#' - Data is appended without checking for duplicates
-#' - The function processes files in memory, so consider memory usage with large datasets
 #'
-#' @keywords internal
-write_document_data <- function(.tab) {
-  purrr::iwalk(
-    .x = split(dplyr::select(.tab, -PathOut), .tab$PathOut),
-    .f = ~ {
-      if (file.exists(.y)) {
-        arrow::write_parquet(dplyr::bind_rows(arrow::read_parquet(.y), .x), .y)
-      } else {
-        arrow::write_parquet(.x, .y)
-      }
-    }
-  )
-}
-
+#'   html_ <- try(rvest::read_html(content_, options = "HUGE"), silent = TRUE)
+#'   if (inherits(html_, "try-error")) {
+#'     return(tibble::tibble(HTML = content_, TextRaw = NA_character_, TextMod = NA_character_, Error = FALSE))
+#'   }
+#'
+#'   text_raw_ <- try(rvest::html_text(html_), silent = TRUE)
+#'   if (inherits(text_raw_, "try-error")) {
+#'     return(tibble::tibble(HTML = content_, TextRaw = NA_character_, TextMod = NA_character_, Error = FALSE))
+#'   }
+#'
+#'   text_mod_ <- standardize_string(text_raw_)
+#'
+#'   return(tibble::tibble(HTML = content_, TextRaw = text_raw_, TextMod = text_mod_, Error = FALSE))
+#' }
+#'
+#' #' Get Document Links To Be Downloaded
+#' #'
+#' #' @description
+#' #' Identifies and prepares document links that haven't been downloaded yet. The function:
+#' #' 1. Checks already downloaded documents in the main document data directory
+#' #' 2. Filters the document links dataset based on provided parameters
+#' #' 3. Excludes already downloaded documents
+#' #' 4. Prepares the data for parallel processing
+#' #'
+#' #' @param .dir Base directory for the SEC data storage
+#' #' @param .params List of filtering parameters from get_edgar_params()
+#' #' @param .workers Number of parallel workers to use for processing
+#' #'
+#' #' @return Writes a parquet file to the temporary directory containing links to be processed,
+#' #'         with an additional 'Split' column for parallel processing. Only includes
+#' #'         documents with valid file extensions.
+#' #'
+#' #' @keywords internal
+#' get_to_be_processed_download_links <- function(.dir, .params, .workers) {
+#'   lp_ <- get_directories(.dir)
+#'   arr_ <- arrow::open_dataset(lp_$DocumentData$Main)
+#'   if (nrow(arr_) == 0) {
+#'     prc_ <- NA_character_
+#'   } else {
+#'     prc_ <- arr_ %>%
+#'       dplyr::distinct(HashDocument) %>%
+#'       dplyr::collect() %>%
+#'       dplyr::pull(HashDocument)
+#'   }
+#'
+#'
+#'   arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
+#'     filter_edgar_data(.params) %>%
+#'     dplyr::filter(!HashDocument %in% prc_) %>%
+#'     dplyr::select(HashDocument, Year, Quarter, YearQuarter, CIK, Type, UrlDocument) %>%
+#'     dplyr::arrange(CIK, YearQuarter) %>%
+#'     dplyr::collect() %>%
+#'     dplyr::mutate(ext = tools::file_ext(UrlDocument)) %>%
+#'     dplyr::filter(!ext == "") %>%
+#'     dplyr::select(-ext) %>%
+#'     dplyr::mutate(
+#'       Split = ceiling(dplyr::row_number() / .workers),
+#'       .before = HashDocument
+#'     ) %>%
+#'     arrow::write_parquet(lp_$DocumentData$Temporary)
+#' }
+#'
+#' #' Write SEC Document Data to Parquet Files
+#' #'
+#' #' @description
+#' #' Writes or appends SEC document data to company-specific Parquet files. The function
+#' #' organizes documents by CIK (company identifier) and handles both new file creation
+#' #' and updates to existing files.
+#' #'
+#' #' @param .tab A tibble/data frame containing document data with the following columns:
+#' #'   \itemize{
+#' #'     \item HashDocument: Unique identifier for the document
+#' #'     \item Year, Quarter, YearQuarter: Time period identifiers
+#' #'     \item CIK: Company identifier
+#' #'     \item Type: Document type
+#' #'     \item HTML: Raw HTML content
+#' #'     \item TextRaw: Extracted raw text
+#' #'     \item TextMod: Processed/standardized text
+#' #'     \item PathOut: Full path for the output Parquet file
+#' #'   }
+#' #'
+#' #' @details
+#' #' The function:
+#' #' 1. Splits the input data by PathOut (company-specific file paths)
+#' #' 2. For each company:
+#' #'    - If a Parquet file exists: Reads existing data and appends new data
+#' #'    - If no file exists: Creates a new Parquet file
+#' #' 3. Removes the PathOut column before writing
+#' #' 4. Maintains one Parquet file per company (CIK)
+#' #'
+#' #' @note
+#' #' - The function assumes the parent directories in PathOut already exist
+#' #' - Data is appended without checking for duplicates
+#' #' - The function processes files in memory, so consider memory usage with large datasets
+#' #'
+#' #' @keywords internal
+#' write_document_data <- function(.tab) {
+#'   purrr::iwalk(
+#'     .x = split(dplyr::select(.tab, -PathOut), .tab$PathOut),
+#'     .f = ~ {
+#'       if (file.exists(.y)) {
+#'         arrow::write_parquet(dplyr::bind_rows(arrow::read_parquet(.y), .x), .y)
+#'       } else {
+#'         arrow::write_parquet(.x, .y)
+#'       }
+#'     }
+#'   )
+#' }
+#'
 
 #'
 #' #' Create Error Table for Document Link Processing

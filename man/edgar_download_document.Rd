@@ -12,7 +12,6 @@ edgar_download_document(
   .ciks = NULL,
   .formtypes = NULL,
   .doctypes = NULL,
-  .workers = 1L,
   .verbose = TRUE
 )
 }
@@ -30,8 +29,6 @@ edgar_download_document(
 \item{.formtypes}{Character vector of document types to filter (e.g., "10-K", "10-Q")}
 
 \item{.doctypes}{Character vector of document types to filter (e.g., "10-K", "10-Q")}
-
-\item{.workers}{Integer specifying the number of parallel workers for downloading}
 
 \item{.verbose}{Logical indicating whether to print progress messages}
 }
