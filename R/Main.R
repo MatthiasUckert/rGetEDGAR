@@ -341,7 +341,7 @@ if (FALSE) {
   devtools::load_all(".")
   library(rGetEDGAR)
   forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A", "S1", "S4", "F1", "F4")
-  forms <- c("10-K", "20-F")
+  forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A")
 
   # Master Index
   edgar_get_master_index(
@@ -365,7 +365,7 @@ if (FALSE) {
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .user = "PeterParker@Outlook.com",
-    .from = 2010.1,
+    .from = 1993.1,
     .to = 2024.4,
     .ciks = NULL,
     .formtypes = forms,
@@ -381,5 +381,16 @@ if (FALSE) {
     .formtypes = forms,
     .doctypes = NULL,
     .collect = TRUE
+  )
+
+  edgar_download_document(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .user = "PeterParker@Outlook.com",
+    .from = 1995.1,
+    .to = 2024.4,
+    .ciks = NULL,
+    .formtypes = forms,
+    .doctypes = NULL,
+    .verbose = TRUE
   )
 }
