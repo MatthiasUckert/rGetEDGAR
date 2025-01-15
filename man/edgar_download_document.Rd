@@ -63,7 +63,7 @@ edgar_download_document(
   .user = "your@email.com",
   .from = 2020.1,
   .to = 2021.4,
-  .ciks = c("0000320193"),  # Apple Inc
+  .ciks = c("0000320193"), # Apple Inc
   .formtypes = c("10-K", "10-Q"),
   .workers = 4
 )

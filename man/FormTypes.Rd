@@ -5,49 +5,27 @@
 \alias{FormTypes}
 \title{SEC EDGAR Form Types Dataset}
 \format{
-A tibble with 733 rows and 4 variables:
+A tibble with 3 variables:
 \describe{
-\item{FormTypeOriginal}{character. The original form type as it appears in the SEC EDGAR database}
-\item{FormTypeStandard}{character. Standardized version of the form type, with some corrections
-(e.g., "10KSB" standardized to "10-KSB")}
-\item{Description}{character. Description of the form type and its purpose. NA if no description
-is available}
-\item{TotalFilings}{integer. The total number of filings for this form type. NA if no count
-is available}
+\item{FormTypeRaw}{character. The original form type as it appears in SEC EDGAR}
+\item{FormTypeMod}{character. Modified/standardized version of the form type
+(currently identical to FormTypeRaw, placeholder for future standardization)}
+\item{nFormTypes}{integer. Count of occurrences of this form type in the database}
 }
 }
 \source{
-\describe{
-\item{SEC EDGAR Master Index}{Data extracted from SEC EDGAR master index files}
-\item{Form Type Descriptions}{Scraped from https://www.secfilingdata.com/sec-form-type}
-}
+SEC EDGAR database master index files
 }
 \usage{
 FormTypes
 }
 \description{
-A dataset containing SEC EDGAR form types, their standardized versions, descriptions,
-and filing statistics. This dataset combines information from the SEC EDGAR master index
-with form type descriptions from secfilingdata.com.
-}
-\details{
-This dataset is created by combining form types from the SEC EDGAR master index with
-descriptions from secfilingdata.com. The process includes:
-\enumerate{
-\item Extracting unique form types from the SEC EDGAR master index
-\item Standardizing certain form type formats
-\item Joining with scraped descriptions from secfilingdata.com
-}
-
-The dataset is particularly useful for:
-\itemize{
-\item Understanding different SEC filing types
-\item Standardizing form type representations
-\item Analyzing filing frequencies
-\item Supporting SEC EDGAR data analysis workflows
-}
+A dataset containing all unique form types found in SEC EDGAR filings, including
+both the raw form type strings and their standardized versions. This dataset
+serves as a reference for understanding and categorizing SEC filing types.
 }
 \keyword{EDGAR}
 \keyword{SEC}
 \keyword{datasets}
 \keyword{filings}
+\keyword{forms}

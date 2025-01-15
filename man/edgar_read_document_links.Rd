@@ -10,6 +10,7 @@ edgar_read_document_links(
   .to = NULL,
   .ciks = NULL,
   .formtypes = NULL,
+  .doctypes = NULL,
   .collect = TRUE
 )
 }
@@ -24,7 +25,9 @@ If NULL, defaults to current quarter}
 
 \item{.ciks}{Character vector of CIK numbers to filter for specific companies}
 
-\item{.formtypes}{Character vector of document types to filter (e.g., "10-K", "10-Q")}
+\item{.formtypes}{Character vector of form types to filter (e.g., "10-K", "10-Q")}
+
+\item{.doctypes}{Character vector of document types to filter (e.g., "10-K", "10-Q")}
 
 \item{.collect}{Logical indicating whether to collect the data into memory (TRUE)
 or return an Arrow Dataset (FALSE)}
@@ -46,23 +49,5 @@ The returned data includes:
 \item Description: Document description
 \item Size: Document size
 \item UrlDocument: URL to the actual document
-}
-}
-\examples{
-\dontrun{
-# Read all 10-K filings for Apple Inc from 2020
-data <- edgar_read_document_links(
-  .dir = "edgar_data",
-  .from = 2020.1,
-  .to = 2020.4,
-  .ciks = "0000320193",
-  .types = "10-K"
-)
-
-# Get Arrow Dataset for delayed computation
-dataset <- edgar_read_document_links(
-  .dir = "edgar_data",
-  .collect = FALSE
-)
 }
 }

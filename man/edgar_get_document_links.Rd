@@ -64,7 +64,7 @@ edgar_get_document_links(
   .user = "your@email.com",
   .from = 2020.1,
   .to = 2021.4,
-  .ciks = c("0000320193", "0001018724")  # Apple and Amazon
+  .ciks = c("0000320193", "0001018724") # Apple and Amazon
 )
 }
 

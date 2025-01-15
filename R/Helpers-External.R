@@ -78,7 +78,8 @@ edgar_read_master_index <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL
 #' @param .to Numeric value specifying the end year.quarter.
 #'           If NULL, defaults to current quarter
 #' @param .ciks Character vector of CIK numbers to filter for specific companies
-#' @param .formtypes Character vector of document types to filter (e.g., "10-K", "10-Q")
+#' @param .formtypes Character vector of form types to filter (e.g., "10-K", "10-Q")
+#' @param .doctypes Character vector of document types to filter (e.g., "10-K", "10-Q")
 #' @param .collect Logical indicating whether to collect the data into memory (TRUE)
 #'                or return an Arrow Dataset (FALSE)
 #'
@@ -97,35 +98,29 @@ edgar_read_master_index <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL
 #' }
 #'
 #' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Read all 10-K filings for Apple Inc from 2020
-#' data <- edgar_read_document_links(
-#'   .dir = "edgar_data",
-#'   .from = 2020.1,
-#'   .to = 2020.4,
-#'   .ciks = "0000320193",
-#'   .types = "10-K"
-#' )
-#'
-#' # Get Arrow Dataset for delayed computation
-#' dataset <- edgar_read_document_links(
-#'   .dir = "edgar_data",
-#'   .collect = FALSE
-#' )
-#' }
-edgar_read_document_links <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .collect = TRUE) {
+edgar_read_document_links <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .collect = TRUE) {
   # Get validated parameters
   params <- get_edgar_params(.from, .to, .ciks, .formtypes)
 
   # Get directory structure
   lp_ <- get_directories(.dir)
 
-  # Open and filter dataset
-  arr_ <- arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
-    dplyr::filter(dplyr::between(YearQuarter, params$from, params$to)) %>%
-    filter_edgar_data(params)
+  check_null_ <- is.null(.from) + is.null(.to) + is.null(.ciks) + is.null(.formtypes) == 4
+  if (!check_null_) {
+    hash_idx_ <- edgar_read_master_index(.dir, .from, .to, .ciks, .formtypes, FALSE) %>%
+      dplyr::distinct(HashIndex) %>%
+      dplyr::collect() %>%
+      dplyr::pull(HashIndex)
+
+    arr_ <- arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
+      dplyr::filter(HashIndex %in% hash_idx_)
+  } else {
+    arr_ <- arrow::open_dataset(lp_$DocumentLinks$Parquet)
+  }
+
+  if (!is.null(.doctypes)) {
+    arr_ <- dplyr::filter(arr_, Type %in% .doctypes)
+  }
 
   # Return based on collect parameter
   if (.collect) {

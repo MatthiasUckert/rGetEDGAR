@@ -10,10 +10,10 @@ if (FALSE) {
   .i <- 125
   .n <- 100000
 
-  .from = NULL
-  .to = NULL
-  .ciks = NULL
-  .types = NULL
+  .from <- NULL
+  .to <- NULL
+  .ciks <- NULL
+  .types <- NULL
 }
 
 
@@ -246,86 +246,101 @@ check_master_index_cols <- function(.tab) {
 
 
 # Get Document Links --------------------------------------------------------------------------
-#' Initialize Document Links Database
+#' Initialize SEC EDGAR Database Schema
 #'
 #' @description
-#' Creates SQLite database schema for document links if it doesn't exist.
+#' Creates SQLite database schema and empty Parquet files for SEC EDGAR data storage
+#' if they don't exist. Handles both document links and landing page schemas.
 #'
-#' @param .dir Path to SQLite database file
-#'
+#' @param .dir Path to the base directory for SEC data storage
+#' @param .source Character string specifying the database type to initialize:
+#'               either "DocumentLinks" or "LandingPage"
 #' @keywords internal
-initial_document_links_database <- function(.dir) {
+initialize_edgar_database <- function(.dir, .source = c("DocumentLinks", "LandingPage")) {
+  # Input validation
+  .source <- match.arg(.source)
+
+  # Get directory paths
   lp_ <- get_directories(.dir)
 
-  if (!file.exists(lp_$DocumentLinks$Sqlite)) {
-    con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$DocumentLinks$Sqlite)
-    DBI::dbExecute(con_, "
-    CREATE TABLE document_links (
-      HashIndex TEXT,
-      HashDocument TEXT,
-      CIK TEXT,
-      Year INTEGER,
-      Quarter INTEGER,
-      YearQuarter REAL,
-      Seq TEXT,
-      Description TEXT,
-      Document TEXT,
-      Type TEXT,
-      Size TEXT,
-      UrlDocument TEXT,
-      Error INTEGER
-    )")
-    suppressWarnings(DBI::dbDisconnect(con_))
+  # Define schemas and structures for each source type
+  schemas <- list(
+    DocumentLinks = list(
+      sqlite_path = lp_$DocumentLinks$Sqlite,
+      parquet_path = lp_$DocumentLinks$Parquet,
+      table_name = "document_links",
+      sql_schema = "
+        CREATE TABLE document_links (
+          HashIndex TEXT,
+          HashDocument TEXT,
+          CIK TEXT,
+          Year INTEGER,
+          Quarter INTEGER,
+          YearQuarter REAL,
+          Seq TEXT,
+          Description TEXT,
+          Document TEXT,
+          Type TEXT,
+          Size TEXT,
+          UrlDocument TEXT,
+          Error INTEGER
+        )",
+      empty_data = tibble::tibble(
+        HashIndex = NA_character_,
+        HashDocument = NA_character_,
+        CIK = NA_character_,
+        Year = NA_integer_,
+        Quarter = NA_integer_,
+        YearQuarter = NA_real_,
+        Seq = NA_character_,
+        Description = NA_character_,
+        Document = NA_character_,
+        Type = NA_character_,
+        Size = NA_character_,
+        UrlDocument = NA_character_,
+        Error = NA
+      )
+    ),
+    LandingPage = list(
+      sqlite_path = lp_$LandingPage$Sqlite,
+      parquet_path = lp_$LandingPage$Parquet,
+      table_name = "landing_page",
+      sql_schema = "
+        CREATE TABLE landing_page (
+          HashIndex TEXT,
+          CIK TEXT,
+          Year INTEGER,
+          Quarter INTEGER,
+          YearQuarter REAL,
+          HTML TEXT,
+          Error INTEGER
+        )",
+      empty_data = tibble::tibble(
+        HashIndex = NA_character_,
+        CIK = NA_character_,
+        Year = NA_integer_,
+        Quarter = NA_integer_,
+        YearQuarter = NA_real_,
+        HTML = NA_character_,
+        Error = NA
+      )
+    )
+  )[[.source]]
+
+  # Initialize SQLite database if it doesn't exist
+  if (!file.exists(schemas$sqlite_path)) {
+    con_ <- DBI::dbConnect(RSQLite::SQLite(), schemas$sqlite_path)
+    on.exit(suppressWarnings(DBI::dbDisconnect(con_)), add = TRUE)
+    DBI::dbExecute(con_, schemas$sql_schema)
   }
 
-  if (!file.exists(lp_$DocumentLinks$Parquet)) {
-    tibble::tibble(
-      HashIndex = NA_character_, HashDocument = NA_character_, CIK = NA_character_,
-      Year = NA_integer_, Quarter = NA_integer_, YearQuarter = NA_real_,
-      Seq = NA_character_, Description = NA_character_, Document = NA_character_,
-      Type = NA_character_, Size = NA_character_, UrlDocument = NA_character_,
-      Error = NA
-    ) %>% arrow::write_parquet(lp_$DocumentLinks$Parquet)
+  # Initialize Parquet file if it doesn't exist
+  if (!file.exists(schemas$parquet_path)) {
+    schemas$empty_data %>%
+      arrow::write_parquet(schemas$parquet_path)
   }
+  Sys.sleep(1)
 }
-
-#' Initialize Document Links Database
-#'
-#' @description
-#' Creates SQLite database schema for document links if it doesn't exist.
-#'
-#' @param .dir Path to SQLite database file
-#'
-#' @keywords internal
-initial_landing_page_database <- function(.dir) {
-  lp_ <- get_directories(.dir)
-
-  if (!file.exists(lp_$LandingPage$Sqlite)) {
-    con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$LandingPage$Sqlite)
-    DBI::dbExecute(con_, "
-    CREATE TABLE landing_page (
-      HashIndex TEXT,
-      CIK TEXT,
-      Year INTEGER,
-      Quarter INTEGER,
-      YearQuarter REAL,
-      HTML TEXT,
-      Error INTEGER
-    )")
-    suppressWarnings(DBI::dbDisconnect(con_))
-  }
-
-  if (!file.exists(lp_$LandingPage$Parquet)) {
-    tibble::tibble(
-      HashIndex = NA_character_, CIK = NA_character_,
-      Year = NA_integer_, Quarter = NA_integer_, YearQuarter = NA_real_,
-      HTML = NA_character_,
-      Error = NA
-    ) %>% arrow::write_parquet(lp_$LandingPage$Parquet)
-  }
-}
-
-
 
 #' Get Master Index Records To Be Processed
 #'
@@ -346,12 +361,17 @@ initial_landing_page_database <- function(.dir) {
 #' @keywords internal
 get_to_be_processed_master_index <- function(.dir, .params, .workers) {
   lp_ <- get_directories(.dir)
+
+  if (dir.exists(lp_$Temporary$DocumentLinks)) {
+    fs::file_delete(lp_$Temporary$DocumentLinks)
+  }
+
   prc_ <- arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
     dplyr::distinct(HashIndex) %>%
     dplyr::collect() %>%
     dplyr::pull(HashIndex)
 
-  arrow::open_dataset(lp_$MasterIndex$Parquet) %>%
+  out_ <- arrow::open_dataset(lp_$MasterIndex$Parquet) %>%
     filter_edgar_data(.params) %>%
     dplyr::filter(!HashIndex %in% prc_) %>%
     dplyr::select(HashIndex, Year, Quarter, YearQuarter, CIK, UrlIndexPage) %>%
@@ -361,63 +381,218 @@ get_to_be_processed_master_index <- function(.dir, .params, .workers) {
     dplyr::mutate(
       Split = ceiling(dplyr::row_number() / .workers),
       .before = HashIndex
-    ) %>%
-    arrow::write_dataset(lp_$Temporary$DocumentLinks)
+    )
 
+
+  if (nrow(out_) > 0) {
+    arrow::write_dataset(out_, lp_$Temporary$DocumentLinks)
+  } else {
+    return(invisible(NULL))
+  }
 }
 
-#' Create Error Table for Document Link Processing
+#' Create Error Table for SEC EDGAR Data Processing
 #'
 #' @description
-#' Creates a standardized error response table when document link processing fails.
+#' Creates standardized error response tables when SEC EDGAR data processing fails.
 #' This ensures consistent error handling and data structure even when the retrieval
-#' or processing of document links encounters problems.
+#' or processing of data encounters problems.
 #'
-#' @return A tibble with empty/NA values for document link fields and Error=TRUE:
-#'   \itemize{
-#'     \item HashDocument: Character, document hash identifier
-#'     \item Seq: Integer, sequence number
-#'     \item Description: Character, document description
-#'     \item Document: Character, document name
-#'     \item Type: Character, document type
-#'     \item Size: Integer, document size
-#'     \item UrlDocument: Character, document URL
-#'     \item Error: Logical, always TRUE for error tables
-#'   }
+#' @param .source Character string specifying the type of error table to create:
+#'               either "DocumentLinks" or "LandingPage"
 #'
+#' @return A tibble with empty/NA values and Error=TRUE.
 #' @keywords internal
-error_table_document_link <- function() {
-  tibble::tibble(
-    HashDocument = NA_character_,
-    Seq = NA_integer_,
-    Description = NA_character_,
-    Document = NA_character_,
-    Type = NA_character_,
-    Size = NA_integer_,
-    UrlDocument = NA_character_,
-    Error = TRUE
+create_error_table <- function(.source = c("DocumentLinks", "LandingPage")) {
+  # Input validation
+  .source <- match.arg(.source)
+
+  # Define error table structures
+  error_structures <- list(
+    DocumentLinks = tibble::tibble(
+      HashDocument = NA_character_,
+      Seq = NA_integer_,
+      Description = NA_character_,
+      Document = NA_character_,
+      Type = NA_character_,
+      Size = NA_integer_,
+      UrlDocument = NA_character_,
+      Error = TRUE
+    ),
+    LandingPage = tibble::tibble(
+      HTML = NA_character_,
+      Error = TRUE
+    )
   )
+
+  # Return appropriate error table
+  error_structures[[.source]]
 }
 
-#' Create Error Table for Document Link Processing
+
+#' Write SEC EDGAR Link Data to Different Storage Formats
 #'
 #' @description
-#' Creates a standardized error response table when document link processing fails.
-#' This ensures consistent error handling and data structure even when the retrieval
-#' or processing of document links encounters problems.
+#' Writes or transfers SEC EDGAR data (document links or landing pages) between
+#' different storage formats (SQLite and Parquet). This function provides a unified
+#' interface for handling data storage operations in the SEC EDGAR database.
 #'
-#' @return A tibble with empty/NA values for document link fields and Error=TRUE:
-#'   \itemize{
-#'     \item HTML: Character, document URL
-#'     \item Error: Logical, always TRUE for error tables
-#'   }
-#'
+#' @param .dir Base directory for the SEC data storage
+#' @param .tab Optional data frame or tibble containing new data to be written.
+#'            Required when writing to SQLite, ignored when converting to Parquet.
+#' @param .source Character string specifying the data type: either "DocumentLinks"
+#'               or "LandingPage"
+#' @param .target Character string specifying the target format: either "sqlite"
+#'               or "parquet"
 #' @keywords internal
-error_table_landing_page <- function() {
-  tibble::tibble(
-    HTML = NA_character_,
-    Error = TRUE
-  )
+write_link_data <- function(.dir, .tab = NULL, .source = c("DocumentLinks", "LandingPage"),
+                            .target = c("sqlite", "parquet")) {
+  # Get directory paths
+  lp_ <- get_directories(.dir)
+
+  # Set parameters based on source type
+  params <- list(
+    DocumentLinks = list(
+      sqlite_path = lp_$DocumentLinks$Sqlite,
+      parquet_path = lp_$DocumentLinks$Parquet,
+      table_name = "document_links",
+      distinct_cols = c("HashIndex", "HashDocument")
+    ),
+    LandingPage = list(
+      sqlite_path = lp_$LandingPage$Sqlite,
+      parquet_path = lp_$LandingPage$Parquet,
+      table_name = "landing_page",
+      distinct_cols = "HashIndex"
+    )
+  )[[.source]]
+
+  # Connect to SQLite database
+  con_ <- DBI::dbConnect(RSQLite::SQLite(), params$sqlite_path)
+  on.exit(suppressWarnings(DBI::dbDisconnect(con_)), add = TRUE)
+
+  if (.target == "sqlite") {
+    DBI::dbWriteTable(con_, params$table_name, .tab, append = TRUE)
+  } else {
+    dplyr::tbl(con_, params$table_name) %>%
+      dplyr::collect() %>%
+      dplyr::distinct(!!!dplyr::syms(params$distinct_cols), .keep_all = TRUE) %>%
+      arrow::write_parquet(params$parquet_path)
+  }
+}
+
+#' Backup SEC EDGAR Database Files
+#'
+#' @description
+#' Creates periodic backups of the SEC EDGAR databases (document links or landing pages).
+#' The function:
+#' 1. Runs every 3 hours (at hours 3, 6, 9, ..., 24)
+#' 2. Creates a compressed zip backup of the SQLite database
+#' 3. Updates the corresponding parquet file with current data
+#'
+#' @param .dir Base directory for the SEC data storage
+#' @param .source Character string specifying the data type to backup: either
+#'               "DocumentLinks" or "LandingPage"
+#' @keywords internal
+backup_link_data <- function(.dir, .source = c("DocumentLinks", "LandingPage")) {
+
+  # Get directory paths
+  lp_ <- get_directories(.dir)
+
+  # Set parameters based on source type
+  params <- list(
+    DocumentLinks = list(
+      backup_dir = lp_$DocumentLinks$BackUps,
+      sqlite_path = lp_$DocumentLinks$Sqlite,
+      file_prefix = "DocumentLinks"
+    ),
+    LandingPage = list(
+      backup_dir = lp_$LandingPage$BackUps,
+      sqlite_path = lp_$LandingPage$Sqlite,
+      file_prefix = "LandingPage"
+    )
+  )[[.source]]
+
+  # Check if it's backup time (every 3 hours)
+  if (lubridate::hour(Sys.time()) %in% seq(3, 24, 3)) {
+    # Create timestamp and backup filepath
+    time_ <- format(Sys.time(), "%Y-%m-%d-%H")
+    file_ <- file.path(params$backup_dir,
+                       paste0(time_, "_", params$file_prefix, ".zip"))
+
+    # Create backup if it doesn't exist
+    if (!file.exists(file_)) {
+      # Create zip backup
+      suppressWarnings(
+        zip::zip(file_, params$sqlite_path, compression_level = 9)
+      )
+
+      # Update parquet file
+      write_link_data(.dir, .source = .source, .target = "parquet")
+    }
+  }
+}
+
+
+
+#' Pull Distinct Column Values from a Table
+#'
+#' @description
+#' Extracts distinct values from a specified column in a database table,
+#' arranges them, and returns them as a vector.
+#'
+#' @param .tab A database table or tibble
+#' @param .col An unquoted column name to extract values from
+#'
+#' @return A vector containing distinct, sorted values from the specified column
+pull_column <- function(.tab, .col) {
+  .tab %>%
+    dplyr::distinct({{ .col }}) %>%
+    dplyr::arrange({{ .col }}) %>%
+    dplyr::collect() %>%
+    dplyr::pull({{ .col }})
+}
+
+#' Finalize SEC EDGAR Tables with Join Operations
+#'
+#' @description
+#' Performs final processing and joining operations on SEC EDGAR document links
+#' or landing page tables.
+#'
+#' @param .tab The main table to be processed (document links or landing page data)
+#' @param .join The table to join with (typically contains HashIndex and related metadata)
+#' @param .type Character string specifying the type of table to finalize:
+#'        either "DocumentLinks" or "LandingPage"
+#'
+#' @return A processed and joined table with standardized column selection
+finalize_tables <- function(.tab, .join, .type = c("DocumentLinks", "LandingPage")) {
+  if (.type == "DocumentLinks") {
+    out_ <- try(.tab %>%
+      dplyr::mutate(Error = as.integer(Error)) %>%
+      dplyr::left_join(
+        y = .join,
+        by = dplyr::join_by(HashIndex),
+        relationship = "many-to-one"
+      ) %>%
+      dplyr::select(
+        HashIndex, HashDocument, CIK,
+        Year, Quarter, YearQuarter,
+        Seq, Description, Document, Type, Size, UrlDocument,
+        Error
+      ), silent = TRUE)
+  } else {
+    out_ <- try(.tab %>%
+      dplyr::mutate(Error = as.integer(Error)) %>%
+      dplyr::left_join(
+        y = .join,
+        by = dplyr::join_by(HashIndex),
+        relationship = "many-to-one"
+      ) %>%
+      dplyr::select(
+        HashIndex, CIK,
+        Year, Quarter, YearQuarter,
+        HTML, Error
+      ), silent = TRUE)
+  }
 }
 
 #' Get Document Link
@@ -432,38 +607,26 @@ error_table_landing_page <- function() {
 #'
 #' @keywords internal
 help_get_document_link <- function(.url, .user) {
-  result_ <- make_get_request(.url, .user)
   error_list <- list(
-    DocumentLinks = error_table_document_link(),
-    LangingPage = error_table_landing_page()
+    DocumentLinks = create_error_table("DocumentLinks"),
+    LangingPage = create_error_table("LangingPage")
   )
 
-
-  if (inherits(result_, "try-error")) {
-    return(error_list)
-  }
-
-  if (httr::status_code(result_) == 429) {
-    Sys.sleep(60)
-  }
-
-  if (!httr::status_code(result_) == 200) {
-    return(error_list)
-  }
+  result_ <- make_get_request(.url, .user)
+  if (inherits(result_, "try-error")) return(error_list)
+  if (httr::status_code(result_) == 429) Sys.sleep(60)
+  if (!httr::status_code(result_) == 200) return(error_list)
 
 
   content_ <- parse_content(result_)
-  if (inherits(content_, "try-error")) {
-    return(error_list)
-  }
+  if (inherits(content_, "try-error")) return(error_list)
+  if (is.na(content_)) return(error_list)
 
   nodes_ <- rvest::read_html(content_) %>%
     rvest::html_elements(css = "#formDiv") %>%
     rvest::html_elements("table")
 
-  if (length(nodes_) == 0) {
-    return(error_list)
-  }
+  if (length(nodes_) == 0) return(error_list)
 
   out_links_ <- try(purrr::map(
     .x = nodes_,
@@ -485,135 +648,12 @@ help_get_document_link <- function(.url, .user) {
   out_html_ <- tibble::tibble(HTML = content_, Error = FALSE)
 
 
-  if (inherits(out_links_, "try-error")) {
-    return(error_list)
-  }
+  if (inherits(out_links_, "try-error")) return(error_list)
 
   return(list(
     DocumentLinks = out_links_,
     LangingPage = out_html_
   ))
-}
-
-#' Write Document Links to Parquet File
-#'
-#' @description
-#' Transfers the entire document links table from SQLite database to a Parquet file format.
-#' This function provides a way to maintain a Parquet copy of the document links data,
-#' which can be more efficient for certain types of data analysis and filtering operations.
-#'
-#' @param .dir Base directory for the SEC data storage
-#' @keywords internal
-write_document_links_to_parquet <- function(.dir) {
-  lp_ <- get_directories(.dir)
-  con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$DocumentLinks$Sqlite)
-  dplyr::tbl(con_, "document_links") %>%
-    dplyr::collect() %>%
-    arrow::write_parquet(lp_$DocumentLinks$Parquet)
-  suppressWarnings(DBI::dbDisconnect(con_))
-  suppressWarnings(invisible(on.exit(DBI::dbDisconnect(con_))))
-}
-
-#' Write Document Links to SQLite Database
-#'
-#' @description
-#' Appends new document links data to the existing SQLite database. This function
-#' serves as a way to incrementally add new document links to the persistent storage.
-#'
-#' @param .dir Base directory for the SEC data storage
-#' @param .tab Data frame or tibble containing new document links to be appended.
-#'            Must match the structure of the 'document_links' table.
-#' @keywords internal
-write_document_links_to_sqlite <- function(.dir, .tab) {
-  lp_ <- get_directories(.dir)
-  con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$DocumentLinks$Sqlite)
-  DBI::dbWriteTable(con_, "document_links", .tab, append = TRUE)
-  suppressWarnings(DBI::dbDisconnect(con_))
-  suppressWarnings(invisible(on.exit(DBI::dbDisconnect(con_))))
-}
-
-
-#' Write Document Links to Parquet File
-#'
-#' @description
-#' Transfers the entire document links table from SQLite database to a Parquet file format.
-#' This function provides a way to maintain a Parquet copy of the document links data,
-#' which can be more efficient for certain types of data analysis and filtering operations.
-#'
-#' @param .dir Base directory for the SEC data storage
-#' @keywords internal
-write_landing_page_to_parquet <- function(.dir) {
-  lp_ <- get_directories(.dir)
-  con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$LandingPage$Sqlite)
-  dplyr::tbl(con_, "landing_page") %>%
-    dplyr::collect() %>%
-    arrow::write_parquet(lp_$LandingPage$Parquet)
-  suppressWarnings(DBI::dbDisconnect(con_))
-  suppressWarnings(invisible(on.exit(DBI::dbDisconnect(con_))))
-}
-
-#' Write Document Links to SQLite Database
-#'
-#' @description
-#' Appends new document links data to the existing SQLite database. This function
-#' serves as a way to incrementally add new document links to the persistent storage.
-#'
-#' @param .dir Base directory for the SEC data storage
-#' @param .tab Data frame or tibble containing new document links to be appended.
-#'            Must match the structure of the 'document_links' table.
-#' @keywords internal
-write_landing_page_to_sqlite <- function(.dir, .tab) {
-  lp_ <- get_directories(.dir)
-  con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$LandingPage$Sqlite)
-  DBI::dbWriteTable(con_, "landing_page", .tab, append = TRUE)
-  suppressWarnings(DBI::dbDisconnect(con_))
-  suppressWarnings(invisible(on.exit(DBI::dbDisconnect(con_))))
-}
-
-
-
-#' Backup Document Links Database
-#'
-#' @description
-#' Creates periodic backups of the document links database. The function:
-#' 1. Runs every 3 hours (at hours 3, 6, 9, ..., 24)
-#' 2. Creates a compressed zip backup of the SQLite database
-#' 3. Updates the parquet file with current data
-#'
-#' @param .dir Base directory for the SEC data storage
-#' @keywords internal
-backup_document_links <- function(.dir) {
-  lp_ <- get_directories(.dir)
-  if (lubridate::hour(Sys.time()) %in% seq(3, 24, 3)) {
-    time_ <- format(Sys.time(), "%Y-%m-%d-%H")
-    file_ <- file.path(lp_$DocumentLinks$BackUps, paste0(time_, "_DocumentLinks.zip"))
-    if (!file.exists(file_)) {
-      suppressWarnings(zip::zip(file_, lp_$DocumentLinks$Sqlite, compression_level = 9))
-      write_document_links_to_parquet(.dir)
-    }
-  }
-}
-
-#' Backup Document Links Database
-#'
-#' @description
-#' Creates periodic backups of the document links database. The function:
-#' 1. Runs every 3 hours (at hours 3, 6, 9, ..., 24)
-#' 2. Creates a compressed zip backup of the SQLite database
-#' 3. Updates the parquet file with current data
-#'
-#' @param .dir Base directory for the SEC data storage
-#' @keywords internal
-backup_landing_page <- function(.dir) {
-  lp_ <- get_directories(.dir)
-  if (lubridate::hour(Sys.time()) %in% seq(3, 24, 3)) {
-    time_ <- format(Sys.time(), "%Y-%m-%d-%H")
-    file_ <- file.path(lp_$LandingPage$BackUps, paste0(time_, "_DocumentLinks.zip"))
-    if (!file.exists(file_)) {
-      suppressWarnings(zip::zip(file_, lp_$LandingPage$Sqlite, compression_level = 9))
-      write_landing_page_to_parquet(.dir)
-    }
-  }
 }
 
 
@@ -655,7 +695,6 @@ get_processed_documents <- function(.dir) {
 #'
 #' @keywords internal
 help_download_document <- function(.url, .user) {
-
   # Get Call -- -- -- -- -- -- -- -- -- -- -- -
   result_ <- make_get_request(.url, .user)
 
@@ -730,7 +769,6 @@ get_to_be_processed_download_links <- function(.dir, .params, .workers) {
       .before = HashDocument
     ) %>%
     arrow::write_parquet(lp_$DocumentData$Temporary)
-
 }
 
 #' Write SEC Document Data to Parquet Files
@@ -769,7 +807,7 @@ get_to_be_processed_download_links <- function(.dir, .params, .workers) {
 #' @keywords internal
 write_document_data <- function(.tab) {
   purrr::iwalk(
-    .x =  split(dplyr::select(.tab, -PathOut), .tab$PathOut),
+    .x = split(dplyr::select(.tab, -PathOut), .tab$PathOut),
     .f = ~ {
       if (file.exists(.y)) {
         arrow::write_parquet(dplyr::bind_rows(arrow::read_parquet(.y), .x), .y)
@@ -779,3 +817,281 @@ write_document_data <- function(.tab) {
     }
   )
 }
+
+
+#'
+#' #' Create Error Table for Document Link Processing
+#' #'
+#' #' @description
+#' #' Creates a standardized error response table when document link processing fails.
+#' #' This ensures consistent error handling and data structure even when the retrieval
+#' #' or processing of document links encounters problems.
+#' #'
+#' #' @return A tibble with empty/NA values for document link fields and Error=TRUE:
+#' #'   \itemize{
+#' #'     \item HashDocument: Character, document hash identifier
+#' #'     \item Seq: Integer, sequence number
+#' #'     \item Description: Character, document description
+#' #'     \item Document: Character, document name
+#' #'     \item Type: Character, document type
+#' #'     \item Size: Integer, document size
+#' #'     \item UrlDocument: Character, document URL
+#' #'     \item Error: Logical, always TRUE for error tables
+#' #'   }
+#' #'
+#' #' @keywords internal
+#' error_table_document_link <- function() {
+#'   tibble::tibble(
+#'     HashDocument = NA_character_,
+#'     Seq = NA_integer_,
+#'     Description = NA_character_,
+#'     Document = NA_character_,
+#'     Type = NA_character_,
+#'     Size = NA_integer_,
+#'     UrlDocument = NA_character_,
+#'     Error = TRUE
+#'   )
+#' }
+#'
+#' #' Create Error Table for Document Link Processing
+#' #'
+#' #' @description
+#' #' Creates a standardized error response table when document link processing fails.
+#' #' This ensures consistent error handling and data structure even when the retrieval
+#' #' or processing of document links encounters problems.
+#' #'
+#' #' @return A tibble with empty/NA values for document link fields and Error=TRUE:
+#' #'   \itemize{
+#' #'     \item HTML: Character, document URL
+#' #'     \item Error: Logical, always TRUE for error tables
+#' #'   }
+#' #'
+#' #' @keywords internal
+#' error_table_landing_page <- function() {
+#'   tibble::tibble(
+#'     HTML = NA_character_,
+#'     Error = TRUE
+#'   )
+#' }
+#'
+
+#'
+#' #' Initialize Document Links Database
+#' #'
+#' #' @description
+#' #' Creates SQLite database schema for document links if it doesn't exist.
+#' #'
+#' #' @param .dir Path to SQLite database file
+#' #'
+#' #' @keywords internal
+#' initial_document_links_database <- function(.dir) {
+#'   lp_ <- get_directories(.dir)
+#'
+#'   if (!file.exists(lp_$DocumentLinks$Sqlite)) {
+#'     con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$DocumentLinks$Sqlite)
+#'     DBI::dbExecute(con_, "
+#'     CREATE TABLE document_links (
+#'       HashIndex TEXT,
+#'       HashDocument TEXT,
+#'       CIK TEXT,
+#'       Year INTEGER,
+#'       Quarter INTEGER,
+#'       YearQuarter REAL,
+#'       Seq TEXT,
+#'       Description TEXT,
+#'       Document TEXT,
+#'       Type TEXT,
+#'       Size TEXT,
+#'       UrlDocument TEXT,
+#'       Error INTEGER
+#'     )")
+#'     suppressWarnings(DBI::dbDisconnect(con_))
+#'   }
+#'
+#'   if (!file.exists(lp_$DocumentLinks$Parquet)) {
+#'     tibble::tibble(
+#'       HashIndex = NA_character_, HashDocument = NA_character_, CIK = NA_character_,
+#'       Year = NA_integer_, Quarter = NA_integer_, YearQuarter = NA_real_,
+#'       Seq = NA_character_, Description = NA_character_, Document = NA_character_,
+#'       Type = NA_character_, Size = NA_character_, UrlDocument = NA_character_,
+#'       Error = NA
+#'     ) %>% arrow::write_parquet(lp_$DocumentLinks$Parquet)
+#'   }
+#' }
+#'
+#' #' Initialize Document Links Database
+#' #'
+#' #' @description
+#' #' Creates SQLite database schema for document links if it doesn't exist.
+#' #'
+#' #' @param .dir Path to SQLite database file
+#' #'
+#' #' @keywords internal
+#' initial_landing_page_database <- function(.dir) {
+#'   lp_ <- get_directories(.dir)
+#'
+#'   if (!file.exists(lp_$LandingPage$Sqlite)) {
+#'     con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$LandingPage$Sqlite)
+#'     DBI::dbExecute(con_, "
+#'     CREATE TABLE landing_page (
+#'       HashIndex TEXT,
+#'       CIK TEXT,
+#'       Year INTEGER,
+#'       Quarter INTEGER,
+#'       YearQuarter REAL,
+#'       HTML TEXT,
+#'       Error INTEGER
+#'     )")
+#'     suppressWarnings(DBI::dbDisconnect(con_))
+#'   }
+#'
+#'   if (!file.exists(lp_$LandingPage$Parquet)) {
+#'     tibble::tibble(
+#'       HashIndex = NA_character_, CIK = NA_character_,
+#'       Year = NA_integer_, Quarter = NA_integer_, YearQuarter = NA_real_,
+#'       HTML = NA_character_,
+#'       Error = NA
+#'     ) %>% arrow::write_parquet(lp_$LandingPage$Parquet)
+#'   }
+#' }
+
+
+
+
+
+
+
+
+#'
+#'
+#'
+#' #' Write Document Links to Parquet File
+#' #'
+#' #' @description
+#' #' Transfers the entire document links table from SQLite database to a Parquet file format.
+#' #' This function provides a way to maintain a Parquet copy of the document links data,
+#' #' which can be more efficient for certain types of data analysis and filtering operations.
+#' #'
+#' #' @param .dir Base directory for the SEC data storage
+#' #' @keywords internal
+#' write_document_links_to_parquet <- function(.dir) {
+#'   lp_ <- get_directories(.dir)
+#'   con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$DocumentLinks$Sqlite)
+#'   dplyr::tbl(con_, "document_links") %>%
+#'     dplyr::collect() %>%
+#'     dplyr::distinct(HashIndex, HashDocument, .keep_all = TRUE) %>%
+#'     arrow::write_parquet(lp_$DocumentLinks$Parquet)
+#'
+#'   suppressWarnings({
+#'     DBI::dbDisconnect(con_)
+#'   })
+#' }
+#'
+#' #' Write Document Links to SQLite Database
+#' #'
+#' #' @description
+#' #' Appends new document links data to the existing SQLite database. This function
+#' #' serves as a way to incrementally add new document links to the persistent storage.
+#' #'
+#' #' @param .dir Base directory for the SEC data storage
+#' #' @param .tab Data frame or tibble containing new document links to be appended.
+#' #'            Must match the structure of the 'document_links' table.
+#' #' @keywords internal
+#' write_document_links_to_sqlite <- function(.dir, .tab) {
+#'   lp_ <- get_directories(.dir)
+#'   con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$DocumentLinks$Sqlite)
+#'   DBI::dbWriteTable(con_, "document_links", .tab, append = TRUE)
+#'
+#'   suppressWarnings({
+#'     DBI::dbDisconnect(con_)
+#'   })
+#' }
+#'
+#'
+#' #' Write Document Links to Parquet File
+#' #'
+#' #' @description
+#' #' Transfers the entire document links table from SQLite database to a Parquet file format.
+#' #' This function provides a way to maintain a Parquet copy of the document links data,
+#' #' which can be more efficient for certain types of data analysis and filtering operations.
+#' #'
+#' #' @param .dir Base directory for the SEC data storage
+#' #' @keywords internal
+#' write_landing_page_to_parquet <- function(.dir) {
+#'   lp_ <- get_directories(.dir)
+#'   con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$LandingPage$Sqlite)
+#'   dplyr::tbl(con_, "landing_page") %>%
+#'     dplyr::collect() %>%
+#'     dplyr::distinct(HashIndex, .keep_all = TRUE) %>%
+#'     arrow::write_parquet(lp_$LandingPage$Parquet)
+#'
+#'   suppressWarnings({
+#'     DBI::dbDisconnect(con_)
+#'   })
+#' }
+#'
+#' #' Write Document Links to SQLite Database
+#' #'
+#' #' @description
+#' #' Appends new document links data to the existing SQLite database. This function
+#' #' serves as a way to incrementally add new document links to the persistent storage.
+#' #'
+#' #' @param .dir Base directory for the SEC data storage
+#' #' @param .tab Data frame or tibble containing new document links to be appended.
+#' #'            Must match the structure of the 'document_links' table.
+#' #' @keywords internal
+#' write_landing_page_to_sqlite <- function(.dir, .tab) {
+#'   lp_ <- get_directories(.dir)
+#'   con_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$LandingPage$Sqlite)
+#'   DBI::dbWriteTable(con_, "landing_page", .tab, append = TRUE)
+#'
+#'   suppressWarnings({
+#'     DBI::dbDisconnect(con_)
+#'   })
+#' }
+#'
+#'
+#'
+#' #' Backup Document Links Database
+#' #'
+#' #' @description
+#' #' Creates periodic backups of the document links database. The function:
+#' #' 1. Runs every 3 hours (at hours 3, 6, 9, ..., 24)
+#' #' 2. Creates a compressed zip backup of the SQLite database
+#' #' 3. Updates the parquet file with current data
+#' #'
+#' #' @param .dir Base directory for the SEC data storage
+#' #' @keywords internal
+#' backup_document_links <- function(.dir) {
+#'   lp_ <- get_directories(.dir)
+#'   if (lubridate::hour(Sys.time()) %in% seq(3, 24, 3)) {
+#'     time_ <- format(Sys.time(), "%Y-%m-%d-%H")
+#'     file_ <- file.path(lp_$DocumentLinks$BackUps, paste0(time_, "_DocumentLinks.zip"))
+#'     if (!file.exists(file_)) {
+#'       suppressWarnings(zip::zip(file_, lp_$DocumentLinks$Sqlite, compression_level = 9))
+#'       write_document_links_to_parquet(.dir)
+#'     }
+#'   }
+#' }
+#'
+#' #' Backup Document Links Database
+#' #'
+#' #' @description
+#' #' Creates periodic backups of the document links database. The function:
+#' #' 1. Runs every 3 hours (at hours 3, 6, 9, ..., 24)
+#' #' 2. Creates a compressed zip backup of the SQLite database
+#' #' 3. Updates the parquet file with current data
+#' #'
+#' #' @param .dir Base directory for the SEC data storage
+#' #' @keywords internal
+#' backup_landing_page <- function(.dir) {
+#'   lp_ <- get_directories(.dir)
+#'   if (lubridate::hour(Sys.time()) %in% seq(3, 24, 3)) {
+#'     time_ <- format(Sys.time(), "%Y-%m-%d-%H")
+#'     file_ <- file.path(lp_$LandingPage$BackUps, paste0(time_, "_DocumentLinks.zip"))
+#'     if (!file.exists(file_)) {
+#'       suppressWarnings(zip::zip(file_, lp_$LandingPage$Sqlite, compression_level = 9))
+#'       write_landing_page_to_parquet(.dir)
+#'     }
+#'   }
+#' }
