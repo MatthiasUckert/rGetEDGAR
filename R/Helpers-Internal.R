@@ -635,7 +635,8 @@ help_get_document_link <- function(.url, .user) {
   ) %>%
     dplyr::bind_rows() %>%
     dplyr::mutate(
-      HashDocument = purrr::map_chr(UrlDocument, digest::digest),
+      HashDocument = paste0(UrlDocument, "-", Seq),
+      HashDocument = purrr::map_chr(HashDocument, digest::digest),
       UrlDocument = rvest::url_absolute(UrlDocument, "https://www.sec.gov/Archives/"),
       dplyr::across(c(Seq, Size), ~ dplyr::if_else(!is.na(.), as.integer(.), -1L)),
       dplyr::across(c(Description, Document, Type, UrlDocument), as.character),

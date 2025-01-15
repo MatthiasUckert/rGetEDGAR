@@ -11,6 +11,7 @@ edgar_download_document(
   .to = NULL,
   .ciks = NULL,
   .formtypes = NULL,
+  .doctypes = NULL,
   .workers = 1L,
   .verbose = TRUE
 )
@@ -27,6 +28,8 @@ edgar_download_document(
 \item{.ciks}{Character vector of CIK numbers to filter for specific companies}
 
 \item{.formtypes}{Character vector of document types to filter (e.g., "10-K", "10-Q")}
+
+\item{.doctypes}{Character vector of document types to filter (e.g., "10-K", "10-Q")}
 
 \item{.workers}{Integer specifying the number of parallel workers for downloading}
 

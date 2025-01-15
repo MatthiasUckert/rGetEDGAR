@@ -149,7 +149,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   # Initialize Databases
   purrr::walk(c("DocumentLinks", "LandingPage"), ~ initialize_edgar_database(.dir, .x))
 
-  print_verbose("Updating Data", TRUE, "\n")
+  print_verbose("Updating Data", TRUE, "\r")
   write_link_data(.dir, out_links_, "DocumentLinks", "parquet")
   write_link_data(.dir, out_htmls_, "LandingPage", "parquet")
 
@@ -163,7 +163,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   } else {
     arr0_ <- arrow::open_dataset(lp_$Temporary$DocumentLinks)
     num_ <- format(nrow(arr0_), big.mark = ",")
-    print_verbose(paste0("IndexLinks to be Processed: ", num_), TRUE, "\n")
+    print_verbose(paste0("IndexLinks to be Processed: ", num_), TRUE, "\n\n")
     yqtr_ <- pull_column(arr0_, YearQuarter)
   }
 
@@ -255,6 +255,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 #' @param .to Numeric value specifying the end year.quarter
 #' @param .ciks Character vector of CIK numbers to filter for specific companies
 #' @param .formtypes Character vector of document types to filter (e.g., "10-K", "10-Q")
+#' @param .doctypes Character vector of document types to filter (e.g., "10-K", "10-Q")
 #' @param .workers Integer specifying the number of parallel workers for downloading
 #' @param .verbose Logical indicating whether to print progress messages
 #'
@@ -287,10 +288,20 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 #' }
 #'
 #' @export
-edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .workers = 1L, .verbose = TRUE) {
+edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .workers = 1L, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
 
+  tab_ <- edgar_read_document_links(.dir, .from, .to, .ciks, .formtypes, .doctypes, FALSE) %>%
+    dplyr::filter(Seq > 0) %>%
+    dplyr::collect()
+
+
   params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
+
+
+
+
+
   get_to_be_processed_download_links(
     .dir = .dir,
     .params = params_,
@@ -387,7 +398,7 @@ if (FALSE) {
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .user = "PeterParker@Outlook.com",
-    .from = 1995.1,
+    .from = 2000.1,
     .to = 2024.4,
     .ciks = NULL,
     .formtypes = forms,
