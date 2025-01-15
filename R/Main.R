@@ -191,14 +191,23 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
         dplyr::mutate(UrlIndexPage = purrr::set_names(UrlIndexPage, HashIndex))
 
 
-      # .url <- use_$UrlIndexPage[use_$HashIndex == "3061991a80ac5cb67df0c465eb6cf190"]
-      lst_ <- furrr::future_map(
-        .x = use_$UrlIndexPage,
-        .f = ~ help_get_document_link(.x, .user),
-        .options = furrr::furrr_options(seed = TRUE)
-      ) %>%
-        purrr::transpose() %>%
-        purrr::map(~ dplyr::bind_rows(.x, , .id = "HashIndex"))
+      # .url <- use_$UrlIndexPage[1]
+      lst_ <- try(R.utils::withTimeout(
+        expr = furrr::future_map(
+          .x = use_$UrlIndexPage,
+          .f = ~ help_get_document_link(.x, .user),
+          .options = furrr::furrr_options(seed = TRUE)
+        ) %>%
+          purrr::transpose() %>%
+          purrr::map(~ dplyr::bind_rows(.x, , .id = "HashIndex")),
+        timeout = 60,
+        onTimeout = "error"
+      ), silent = TRUE)
+
+      if (inherits(lst_, "try-error")) {
+        print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
+        next
+      }
 
       if (nrow(lst_$DocumentLinks) == 0) {
         print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
@@ -225,6 +234,8 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 
   }
   on.exit(future::plan("default"))
+  on.exit(write_link_data(.dir, out_links_, "DocumentLinks", "sqlite"))
+  on.exit(write_link_data(.dir, out_htmls_, "LandingPage", "sqlite"))
 }
 
 

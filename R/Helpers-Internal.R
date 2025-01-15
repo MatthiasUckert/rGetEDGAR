@@ -405,7 +405,7 @@ get_to_be_processed_master_index <- function(.dir, .params, .workers) {
 #' @keywords internal
 create_error_table <- function(.source = c("DocumentLinks", "LandingPage")) {
   # Input validation
-  .source <- match.arg(.source)
+  .source <- match.arg(.source, c("DocumentLinks", "LandingPage"))
 
   # Define error table structures
   error_structures <- list(
@@ -609,7 +609,7 @@ finalize_tables <- function(.tab, .join, .type = c("DocumentLinks", "LandingPage
 help_get_document_link <- function(.url, .user) {
   error_list <- list(
     DocumentLinks = create_error_table("DocumentLinks"),
-    LangingPage = create_error_table("LangingPage")
+    LangingPage = create_error_table("LandingPage")
   )
 
   result_ <- make_get_request(.url, .user)
