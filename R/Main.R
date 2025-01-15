@@ -149,6 +149,10 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   # Initialize Databases
   purrr::walk(c("DocumentLinks", "LandingPage"), ~ initialize_edgar_database(.dir, .x))
 
+  print_verbose("Updating Data", TRUE, "\n")
+  write_link_data(.dir, out_links_, "DocumentLinks", "parquet")
+  write_link_data(.dir, out_htmls_, "LandingPage", "parquet")
+
   # Get To be Processed Index Files
   params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
   get_to_be_processed_master_index(.dir, .params = params_, .workers)
@@ -346,6 +350,7 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
 
     write_document_data(out_)
   }
+
   suppressWarnings(future::plan("default"))
   suppressWarnings(on.exit(future::plan("default")))
   fs::file_delete(lp_$DocumentData$Temporary)
@@ -400,39 +405,4 @@ if (FALSE) {
     .collect = TRUE
   )
 
-
-
-  #
-  #   FormTypes
-  #   DocTypes
-  #
-  #
-  #
-  #   tab_ <- edgar_read_document_links(
-  #     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-  #     .from = 1993.1,
-  #     .to = 2025.4,
-  #     .ciks = NULL,
-  #     .formtypes = c("10-K", "10-Q"),
-  #     .doctypes = NULL,
-  #     .collect = TRUE
-  #   )
-  #
-  #   %>% dplyr::count(Type, sort = TRUE) %>%
-  #     dplyr::collect()
-
-
-
-
-  #
-  #   edgar_download_document(
-  #     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-  #     .user = "PeterParker@Outlook.com",
-  #     .from = 1995.1,
-  #     .to = 1995.4,
-  #     .ciks = NULL,
-  #     .types = NULL,
-  #     .workers = 10L,
-  #     .verbose = TRUE
-  #   )
 }
