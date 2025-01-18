@@ -341,7 +341,7 @@ if (FALSE) {
   devtools::load_all(".")
   library(rGetEDGAR)
   forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A", "S1", "S4", "F1", "F4")
-  forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A")
+  forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A")
 
   # Master Index
   edgar_get_master_index(
@@ -373,7 +373,7 @@ if (FALSE) {
     .verbose = TRUE
   )
 
-  edgar_read_document_links(
+  .tab <- edgar_read_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .from = 1995.1,
     .to = 2024.4,
@@ -393,4 +393,56 @@ if (FALSE) {
     .doctypes = NULL,
     .verbose = TRUE
   )
+}
+
+
+
+
+edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .verbose = TRUE) {
+  lp_ <- get_directories(.dir)
+
+  tab_ <- edgar_read_document_links(.dir, .from, .to, .ciks, .formtypes, .doctypes, FALSE) %>%
+    dplyr::filter(Seq > 0) %>%
+    dplyr::filter(Error == 0) %>%
+    dplyr::arrange(CIK, YearQuarter) %>%
+    dplyr::collect() %>%
+    dplyr::mutate(
+      FileExt = tools::file_ext(UrlDocument),
+      OutExt = dplyr::case_when(
+        FileExt %in% c("htm", "xml", "xsd", "txt") ~ ".parquet",
+        FileExt %in% c("gif", "jpg", "pdf") ~ paste0(".", FileExt)
+      ),
+      DirOut = file.path(lp_$DocumentData, CIK),
+      PathOut = file.path(DirOut, paste0(HashDocument, OutExt))
+    ) %>%
+    dplyr::filter(!FileExt == "") %>%
+    dplyr::filter(!file.exists(PathOut))
+
+
+  t0_global <- Sys.time() # Keep track of overall time
+  n_total <- nrow(tab_) # Total number to process
+
+  for (i in seq_len(n_total)) {
+    t0_ <- Sys.time()
+    help_download_document(tab_[i, ], .user)
+    t1_ <- Sys.time()
+
+    # Rate limiting
+    ela_ <- as.numeric(difftime(t1_, t0_, units = "secs"))
+    if (ela_ < .1) {
+      Sys.sleep(.1)
+    }
+
+    # Calculate progress metrics
+    elapsed_total <- as.numeric(difftime(t1_, t0_global, units = "secs"))
+    rate <- i / elapsed_total
+    eta <- (n_total - i) / rate
+
+    cat(
+      "\rDocument:", format(i, big.mark = ","), "of", format(n_total, big.mark = ","),
+      "| Elapsed:", format(round(elapsed_total / 60, 1), big.mark = ","), "min",
+      "| ETA:",  format(round(eta / 60, 1), big.mark = ","), "min",
+      "|", round(rate, 1), "Docs/Sec                "
+    )
+  }
 }

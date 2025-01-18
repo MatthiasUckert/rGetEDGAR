@@ -1,79 +1,69 @@
-#' SEC EDGAR Form Types Dataset
+#' SEC EDGAR Form Types Dataset (Raw)
 #'
-#' A dataset containing all unique form types found in SEC EDGAR filings, including
-#' both the raw form type strings and their standardized versions. This dataset
-#' serves as a reference for understanding and categorizing SEC filing types.
+#' A comprehensive dataset containing SEC EDGAR form types with their raw and standardized
+#' versions, descriptions, and classifications.
 #'
-#' @format A tibble with 3 variables:
+#' @format A tibble with 5 variables:
 #' \describe{
+#'   \item{FormClass}{character. Classification category of the form (e.g., Annual Reports, Registration Forms)}
 #'   \item{FormTypeRaw}{character. The original form type as it appears in SEC EDGAR}
-#'   \item{FormTypeMod}{character. Modified/standardized version of the form type
-#'                      (currently identical to FormTypeRaw, placeholder for future standardization)}
-#'   \item{nFormTypes}{integer. Count of occurrences of this form type in the database}
+#'   \item{FormTypeMod}{character. Standardized version of the form type}
+#'   \item{nDocs}{integer. Count of occurrences of this form type in the database}
+#'   \item{Description}{character. Detailed description of the form type's purpose}
 #' }
 #'
 #' @source SEC EDGAR database master index files
 #' @keywords datasets SEC EDGAR filings forms
-"FormTypes"
+"FormTypesRaw"
 
-#' SEC EDGAR Document Types Dataset
+#' SEC EDGAR Form Types Dataset (Modified)
 #'
-#' A dataset containing all unique document types found within SEC EDGAR filings.
-#' Document types represent the specific components or attachments within SEC filings.
+#' A summarized dataset of SEC EDGAR form types grouped by their classifications
+#' and standardized versions.
 #'
-#' @format A tibble with 3 variables:
+#' @format A tibble with 4 variables:
 #' \describe{
+#'   \item{FormClass}{character. Classification category of the form}
+#'   \item{FormTypeMod}{character. Standardized version of the form type}
+#'   \item{nDocs}{integer. Aggregated count of occurrences}
+#'   \item{Description}{character. Detailed description of the form type's purpose}
+#' }
+#'
+#' @source SEC EDGAR database master index files
+#' @keywords datasets SEC EDGAR filings forms standardized
+"FormTypesMod"
+
+#' SEC EDGAR Document Types Dataset (Raw)
+#'
+#' A detailed dataset containing all unique document types found within SEC EDGAR filings,
+#' including exhibits, main forms, and other document categories.
+#'
+#' @format A tibble with 5 variables:
+#' \describe{
+#'   \item{DocClass}{character. Classification category of the document (e.g., Exhibits, Main Form Types)}
 #'   \item{DocTypeRaw}{character. The original document type as it appears in SEC EDGAR}
-#'   \item{DocTypeMod}{character. Modified/standardized version of the document type
-#'                     (currently identical to DocTypeRaw, placeholder for future standardization)}
-#'   \item{nDocTypes}{integer. Count of occurrences of this document type in the database}
+#'   \item{DocTypeMod}{character. Standardized version of the document type}
+#'   \item{nDocs}{integer. Count of occurrences of this document type}
+#'   \item{Description}{character. Detailed description of the document type's purpose}
 #' }
 #'
 #' @source SEC EDGAR database document indices
-#' @keywords datasets SEC EDGAR filings documents
-"DocTypes"
+#' @keywords datasets SEC EDGAR filings documents exhibits
+"DocTypesRaw"
 
-#' SEC EDGAR Raw Form-Document Type Combinations Dataset
+#' SEC EDGAR Document Types Dataset (Modified)
 #'
-#' A dataset containing all observed combinations of form types and document types
-#' in their original form as they appear in SEC EDGAR filings. This dataset helps
-#' understand which document types typically appear in which filing forms.
+#' A summarized dataset of SEC EDGAR document types grouped by their classifications
+#' and standardized versions.
 #'
-#' @format A tibble with 3 variables:
+#' @format A tibble with 4 variables:
 #' \describe{
-#'   \item{FormTypeRaw}{character. The original form type from the filing}
-#'   \item{DocTypeRaw}{character. The original document type from the filing}
-#'   \item{nRawTypes}{integer. Count of occurrences of this form type and document type combination}
+#'   \item{DocClass}{character. Classification category of the document}
+#'   \item{DocTypeMod}{character. Standardized version of the document type}
+#'   \item{nDocs}{integer. Aggregated count of occurrences}
+#'   \item{Description}{character. Detailed description of the document type's purpose}
 #' }
 #'
-#' @details
-#' This dataset is created by joining the master index with document links using
-#' HashIndex as the key. It represents the raw, unmodified combinations as they
-#' appear in the SEC EDGAR database.
-#'
-#' @source SEC EDGAR database master index and document indices
-#' @keywords datasets SEC EDGAR filings documents combinations
-"RawTypes"
-
-#' SEC EDGAR Modified Form-Document Type Combinations Dataset
-#'
-#' A dataset containing all observed combinations of standardized form types and
-#' document types from SEC EDGAR filings. This dataset is similar to RawTypes but
-#' uses the modified/standardized versions of both form and document types.
-#'
-#' @format A tibble with 3 variables:
-#' \describe{
-#'   \item{FormTypeMod}{character. The modified/standardized form type}
-#'   \item{DocTypeMod}{character. The modified/standardized document type}
-#'   \item{nModTypes}{integer. Count of occurrences of this combination}
-#' }
-#'
-#' @details
-#' This dataset is created by joining the master index with document links using
-#' HashIndex as the key, using the modified versions of both form and document types.
-#' Currently, the modified versions are identical to the raw versions, serving as
-#' placeholders for future standardization efforts.
-#'
-#' @source SEC EDGAR database master index and document indices
-#' @keywords datasets SEC EDGAR filings documents combinations standardized
-"ModTypes"
+#' @source SEC EDGAR database document indices
+#' @keywords datasets SEC EDGAR filings documents exhibits standardized
+"DocTypesMod"
