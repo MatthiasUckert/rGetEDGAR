@@ -241,7 +241,6 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 }
 
 
-
 #' Download SEC EDGAR Documents
 #'
 #' @description
@@ -288,51 +287,48 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 #' @export
 edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
-
-  tab_ <- edgar_read_document_links(.dir, .from, .to, .ciks, .formtypes, .doctypes, FALSE) %>%
-    dplyr::filter(Seq > 0) %>%
-    dplyr::filter(Error == 0) %>%
-    dplyr::arrange(CIK, YearQuarter) %>%
-    dplyr::collect() %>%
-    dplyr::mutate(
-      FileExt = tools::file_ext(UrlDocument),
-      OutExt = dplyr::case_when(
-        FileExt %in% c("htm", "xml", "xsd", "txt") ~ ".parquet",
-        FileExt %in% c("gif", "jpg", "pdf") ~ paste0(".", FileExt)
-      ),
-      DirOut = file.path(lp_$DocumentData, CIK),
-      PathOut = file.path(DirOut, paste0(HashDocument, OutExt))
-    ) %>%
-    dplyr::filter(!FileExt == "") %>%
-    dplyr::filter(!file.exists(PathOut))
+  get_temprorary_document_download(.dir, .from, .to, .ciks, .formtypes, .doctypes)
 
 
   t0_global <- Sys.time() # Keep track of overall time
-  n_total <- nrow(tab_) # Total number to process
+  n_total <- nrow(arrow::open_dataset(lp_$Temporary$DocumentData)) # Total number to process
 
+
+  future::plan("multisession", workers = 10L)
   for (i in seq_len(n_total)) {
+    use_ <- arrow::open_dataset(lp_$Temporary$DocumentData) %>%
+      dplyr::filter(Split == i) %>%
+      dplyr::collect()
+    lst_ <- split(use_, use_$HashDocument)
     t0_ <- Sys.time()
-    help_download_document(tab_[i, ], .user)
+
+    furrr::future_walk(
+      .x = lst_,
+      .f = ~ help_download_document(.doc_row = .x, .user),
+      .progress = FALSE,
+      .options = furrr::furrr_options(seed = TRUE)
+    )
     t1_ <- Sys.time()
 
     # Rate limiting
     ela_ <- as.numeric(difftime(t1_, t0_, units = "secs"))
-    if (ela_ < .1) {
-      Sys.sleep(.1)
+    if (ela_ < 1) {
+      Sys.sleep(1 - ela_ + .05)
     }
 
     # Calculate progress metrics
     elapsed_total <- as.numeric(difftime(t1_, t0_global, units = "secs"))
-    rate <- i / elapsed_total
-    eta <- (n_total - i) / rate
+    rate <- (i * 10) / elapsed_total
+    eta <- (n_total - (i * 10)) / rate
 
     cat(
-      "\rDocument:", format(i, big.mark = ","), "of", format(n_total, big.mark = ","),
+      "\rDocument:", format(i * 10, big.mark = ","), "of", format(n_total, big.mark = ","),
       "| Elapsed:", format(round(elapsed_total / 60, 1), big.mark = ","), "min",
       "| ETA:",  format(round(eta / 60, 1), big.mark = ","), "min",
       "|", round(rate, 1), "Docs/Sec                "
     )
   }
+  future::plan("default")
 }
 
 
@@ -365,7 +361,7 @@ if (FALSE) {
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .user = "PeterParker@Outlook.com",
-    .from = 1993.1,
+    .from = 2010.1,
     .to = 2024.4,
     .ciks = NULL,
     .formtypes = forms,
@@ -373,7 +369,7 @@ if (FALSE) {
     .verbose = TRUE
   )
 
-  .tab <- edgar_read_document_links(
+  edgar_read_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .from = 1995.1,
     .to = 2024.4,
@@ -383,66 +379,21 @@ if (FALSE) {
     .collect = TRUE
   )
 
-  edgar_download_document(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = "PeterParker@Outlook.com",
-    .from = 1995.1,
-    .to = 2024.4,
-    .ciks = NULL,
-    .formtypes = forms,
-    .doctypes = NULL,
-    .verbose = TRUE
-  )
-}
 
-
-
-
-edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .verbose = TRUE) {
-  lp_ <- get_directories(.dir)
-
-  tab_ <- edgar_read_document_links(.dir, .from, .to, .ciks, .formtypes, .doctypes, FALSE) %>%
-    dplyr::filter(Seq > 0) %>%
-    dplyr::filter(Error == 0) %>%
-    dplyr::arrange(CIK, YearQuarter) %>%
-    dplyr::collect() %>%
-    dplyr::mutate(
-      FileExt = tools::file_ext(UrlDocument),
-      OutExt = dplyr::case_when(
-        FileExt %in% c("htm", "xml", "xsd", "txt") ~ ".parquet",
-        FileExt %in% c("gif", "jpg", "pdf") ~ paste0(".", FileExt)
-      ),
-      DirOut = file.path(lp_$DocumentData, CIK),
-      PathOut = file.path(DirOut, paste0(HashDocument, OutExt))
-    ) %>%
-    dplyr::filter(!FileExt == "") %>%
-    dplyr::filter(!file.exists(PathOut))
-
-
-  t0_global <- Sys.time() # Keep track of overall time
-  n_total <- nrow(tab_) # Total number to process
-
-  for (i in seq_len(n_total)) {
-    t0_ <- Sys.time()
-    help_download_document(tab_[i, ], .user)
-    t1_ <- Sys.time()
-
-    # Rate limiting
-    ela_ <- as.numeric(difftime(t1_, t0_, units = "secs"))
-    if (ela_ < .1) {
-      Sys.sleep(.1)
-    }
-
-    # Calculate progress metrics
-    elapsed_total <- as.numeric(difftime(t1_, t0_global, units = "secs"))
-    rate <- i / elapsed_total
-    eta <- (n_total - i) / rate
-
-    cat(
-      "\rDocument:", format(i, big.mark = ","), "of", format(n_total, big.mark = ","),
-      "| Elapsed:", format(round(elapsed_total / 60, 1), big.mark = ","), "min",
-      "| ETA:",  format(round(eta / 60, 1), big.mark = ","), "min",
-      "|", round(rate, 1), "Docs/Sec                "
+  for (doc in c("Exhibit 10", "10-K", "10-Q", "8-K", "20-F")) {
+    cat("\nDownloading:", doc, "\n")
+    edgar_download_document(
+      .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+      .user = "PeterParker@Outlook.com",
+      .from = 1995.1,
+      .to = 2024.4,
+      .ciks = NULL,
+      .formtypes = c("Exhibit 10", "10-K", "10-Q", "8-K", "20-F"),
+      .doctypes = doc,
+      .verbose = TRUE
     )
   }
+
 }
+
+

@@ -119,7 +119,23 @@ edgar_read_document_links <- function(.dir, .from = NULL, .to = NULL, .ciks = NU
   }
 
   if (!is.null(.doctypes)) {
-    arr_ <- dplyr::filter(arr_, Type %in% .doctypes)
+    tab_doc_types_ <- get("DocTypesRaw")
+    vec_doc_types_ <- sort(unique(tab_doc_types_$DocTypeMod))
+    if (!all(.doctypes %in% vec_doc_types_)) {
+      stop(paste0(".doctype must be any of:\n", paste(paste0("'", vec_doc_types_, "'"), collapse = ", ")), call. = FALSE)
+    }
+
+    arr_ <- arr_ %>%
+      dplyr::rename(DocTypeRaw = Type) %>%
+      dplyr::inner_join(
+        y = tab_doc_types_ %>%
+          dplyr::filter(DocTypeMod %in% .doctypes) %>%
+          dplyr::select(-c(nDocs, Description)) %>%
+          arrow::as_arrow_table(),
+        by = "DocTypeRaw"
+      ) %>%
+      dplyr::relocate(c(DocClass, DocTypeMod), .before = DocTypeRaw) %>%
+      dplyr::filter(Error == 0)
   }
 
   # Return based on collect parameter
@@ -154,6 +170,9 @@ standardize_string <- function(.str) {
 
 # Debug ---------------------------------------------------------------------------------------
 if (FALSE) {
+  devtools::load_all()
+  forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A")
+
   edgar_read_master_index(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .from = NULL,
@@ -162,4 +181,15 @@ if (FALSE) {
     .formtypes = c("10-K", "10-Q"),
     .collect = TRUE
   )
+
+  edgar_read_document_links(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .from = 1995.1,
+    .to = 2024.4,
+    .ciks = NULL,
+    .formtypes = forms,
+    .doctypes = NULL,
+    .collect = TRUE
+  )
+
 }

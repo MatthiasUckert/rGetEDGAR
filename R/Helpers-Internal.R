@@ -679,9 +679,7 @@ help_get_document_link <- function(.url, .user) {
 #' @return A Document
 #' @keywords internal
 help_download_document <- function(.doc_row, .user) {
-  if (file.exists(.doc_row$PathOut)) {
-    return(invisible(NULL))
-  }
+
   # Create output directory if it doesn't exist
   fs::dir_create(.doc_row$DirOut)
 
@@ -707,6 +705,51 @@ help_download_document <- function(.doc_row, .user) {
     writeBin(content_, .doc_row$PathOut)
   }
 }
+
+
+#' Prepare Temporary Document Download Data
+#'
+#' @description
+#' Creates a temporary dataset of documents to be downloaded from SEC EDGAR,
+#' organizing them by CIK and document type. The function processes document URLs
+#' and prepares file paths for storage.
+#'
+#' @param .dir Character string specifying the base directory for data storage
+#' @param .from Numeric value specifying the start year.quarter (e.g., 2020.1)
+#' @param .to Numeric value specifying the end year.quarter
+#' @param .ciks Character vector of Central Index Key (CIK) numbers to filter
+#' @param .formtypes Character vector of form types to filter (e.g., "10-K", "10-Q")
+#' @param .doctypes Character vector of document types to filter
+#'
+#' @return No return value, called for side effects (writes to temporary Parquet file)
+#'
+#' @keywords internal
+get_temprorary_document_download <- function(.dir, .from, .to, .ciks, .formtypes, .doctypes) {
+
+  lp_ <- get_directories(.dir)
+
+  edgar_read_document_links(.dir, .from, .to, .ciks, .formtypes, .doctypes, FALSE) %>%
+    dplyr::select(HashDocument, CIK, DocTypeMod, UrlDocument) %>%
+    dplyr::collect() %>%
+    dplyr::mutate(
+      FileExt = tools::file_ext(UrlDocument),
+      OutExt = dplyr::case_when(
+        FileExt %in% c("html", "htm", "xml", "xsd", "txt") ~ ".parquet",
+        FileExt %in% c("gif", "jpg", "pdf") ~ paste0(".", FileExt)
+      ),
+      DirOut = file.path(lp_$DocumentData, CIK, gsub("\\s", "", DocTypeMod)),
+      PathOut = file.path(DirOut, paste0(HashDocument, OutExt))
+    ) %>%
+    # dplyr::filter(is.na(OutExt)) %>%
+    dplyr::filter(!FileExt == "") %>%
+    dplyr::filter(!file.exists(PathOut)) %>%
+    dplyr::mutate(
+      DocNum = dplyr::row_number(),
+      Split = ceiling(DocNum / 10)
+    ) %>%
+    arrow::write_parquet(lp_$Temporary$DocumentData)
+}
+
 
 
 
