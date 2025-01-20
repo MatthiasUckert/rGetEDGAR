@@ -428,13 +428,9 @@ if (FALSE) {
     .from = 1995.1,
     .to = 2024.4,
     .ciks = NULL,
-    .formtypes = c("Exhibit 10", "10-K", "10-Q", "8-K", "20-F"),
-    .doctypes = doc,
+    .formtypes = forms,
+    .doctypes = c("Exhibit 10", "10-K", "10-Q", "8-K", "20-F"),
     .verbose = TRUE
   )
 
-  for (doc in c("Exhibit 10", "10-K", "10-Q", "8-K", "20-F")) {
-    cat("\nDownloading:", doc, "\n")
-
-  }
 }
