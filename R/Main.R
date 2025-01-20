@@ -376,11 +376,16 @@ if (FALSE) {
   library(rGetEDGAR)
   forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A", "S1", "S4", "F1", "F4")
   forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A")
+  user <- ifelse(
+    Sys.info()["sysname"] == "Darwin",
+    "PetroParkerLosSpiderHombreABC002581@Outlook.com",
+    "TonyStarkIronManWeaponXYZ847263@Outlook.com"
+  )
 
   # Master Index
   edgar_get_master_index(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = "PeterParkerLosSpiderHombreABC002581@Outlook.com",
+    .user = user,
     .from = NULL,
     .to = NULL,
     .verbose = TRUE
@@ -398,7 +403,7 @@ if (FALSE) {
   # Document Links
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = "PetroParkerLosSpiderHombreABC002581@Outlook.com",
+    .user = user,
     .from = 2014.1,
     .to = 2024.4,
     .ciks = NULL,
@@ -417,18 +422,19 @@ if (FALSE) {
     .collect = TRUE
   )
 
+  edgar_download_document(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .user = user,
+    .from = 1995.1,
+    .to = 2024.4,
+    .ciks = NULL,
+    .formtypes = c("Exhibit 10", "10-K", "10-Q", "8-K", "20-F"),
+    .doctypes = doc,
+    .verbose = TRUE
+  )
 
   for (doc in c("Exhibit 10", "10-K", "10-Q", "8-K", "20-F")) {
     cat("\nDownloading:", doc, "\n")
-    edgar_download_document(
-      .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-      .user = "PeterParkerLosSpiderHombreABC002581@Outlook.com",
-      .from = 1995.1,
-      .to = 2024.4,
-      .ciks = NULL,
-      .formtypes = c("Exhibit 10", "10-K", "10-Q", "8-K", "20-F"),
-      .doctypes = doc,
-      .verbose = TRUE
-    )
+
   }
 }
