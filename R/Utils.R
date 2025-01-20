@@ -15,6 +15,7 @@ get_directories <- function(.dir) {
   dir_landing_ <- fs::dir_create(file.path(dir_, "LandingPage"))
   dir_links_ <- fs::dir_create(file.path(dir_, "DocumentLinks"))
   dir_temp_ <- fs::dir_create(file.path(dir_, "Temporary"))
+  dir_log_ <- fs::dir_create(file.path(dir_, "Logs"))
 
   list(
     MasterIndex = list(
@@ -35,6 +36,11 @@ get_directories <- function(.dir) {
     Temporary = list(
       DocumentLinks = file.path(dir_temp_, "TemporaryDocumentLinks.parquet"),
       DocumentData = file.path(dir_temp_, "TemporaryDocumentData.parquet")
+    ),
+    Logs = list(
+      MasterIndex = file.path(dir_log_, "LogMasterIndex.csv"),
+      DocumentLinks = file.path(dir_log_, "LogDocumentLinks.csv"),
+      DocumentData = file.path(dir_log_, "LogDocumentData.csv")
     )
   )
 }

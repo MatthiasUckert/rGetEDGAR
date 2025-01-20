@@ -152,6 +152,8 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   print_verbose("Updating Data", TRUE, "\r")
   write_link_data(.dir, out_links_, "DocumentLinks", "parquet")
   write_link_data(.dir, out_htmls_, "LandingPage", "parquet")
+  invisible(gc())
+
 
   # Get To be Processed Index Files
   params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
@@ -192,8 +194,12 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
         dplyr::filter(Split == j) %>%
         dplyr::collect() %>%
         dplyr::distinct(HashIndex, .keep_all = TRUE) %>%
-        dplyr::mutate(UrlIndexPage = purrr::set_names(UrlIndexPage, HashIndex))
+        dplyr::mutate(
+          PathLog = lp_$Logs$DocumentLinks,
+          UrlIndexPage = purrr::set_names(UrlIndexPage, HashIndex)
+          )
 
+      .index_row <- use_[1, ]
 
       # .url <- use_$UrlIndexPage[1]
       lst_ <- try(R.utils::withTimeout(
@@ -204,17 +210,37 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
         ) %>%
           purrr::transpose() %>%
           purrr::map(~ dplyr::bind_rows(.x, , .id = "HashIndex")),
-        timeout = 5,
+        timeout = 30,
         onTimeout = "error"
       ), silent = TRUE)
 
       if (inherits(lst_, "try-error")) {
-        print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
+        save_logging(
+          .path = lp_$Logs$DocumentLinks,
+          .loop = paste0(yqtr_[i], ": ", stringi::stri_pad_left(j, 6, "0")),
+          .function = "edgar_get_document_links",
+          .part = "1. process_batch",
+          .hash_index = .index_row$HashIndex,
+          .hash_document = NA_character_,
+          .error = paste("Timeout (30sec) or error in batch processing:", as.character(lst_))
+        )
+        Sys.sleep(10)
+        print_verbose("Some error occurred, no worries we are continuing :) ...", .verbose, "\r")
         next
       }
 
       if (nrow(lst_$DocumentLinks) == 0) {
-        print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
+        save_logging(
+          .path = lp_$Logs$DocumentLinks,
+          .loop = paste0(yqtr_[i], ": ", stringi::stri_pad_left(j, 6, "0")),
+          .function = "edgar_get_document_links",
+          .part = "2. check_results",
+          .hash_index = .index_row$HashIndex,
+          .hash_document = NA_character_,
+          .error = "No document links found in batch"
+        )
+        Sys.sleep(10)
+        print_verbose("Some error occurred, no worries we are continuing :) ...", .verbose, "\r")
         next
       }
 
@@ -222,13 +248,27 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       out_htmls_ <- finalize_tables(lst_$LangingPage, use_, "LangingPage")
 
       if (inherits(out_links_, "try-error") | inherits(out_htmls_, "try-error")) {
-        print_verbose("Some error occured, no worries we are continuing :) ...", .verbose, "\r")
+        save_logging(
+          .path = lp_$Logs$DocumentLinks,
+          .loop = paste0(yqtr_[i], ": ", stringi::stri_pad_left(j, 6, "0")),
+          .function = "edgar_get_document_links",
+          .part = "3. finalize_tables",
+          .hash_index = .index_row$HashIndex,
+          .hash_document = NA_character_,
+          .error = paste(
+            "Error in finalizing tables:",
+            if (inherits(out_links_, "try-error")) as.character(out_links_),
+            if (inherits(out_htmls_, "try-error")) as.character(out_htmls_)
+          )
+        )
+        Sys.sleep(10)
+        print_verbose("Some error occurred, no worries we are continuing :) ...", .verbose, "\r")
         next
       }
 
       # Write Output -- -- -- -- -- -- -- -- -- -
-      write_link_data(.dir, out_links_, "DocumentLinks", "sqlite")
-      write_link_data(.dir, out_htmls_, "LandingPage", "sqlite")
+      # write_link_data(.dir, out_links_, "DocumentLinks", "sqlite")
+      # write_link_data(.dir, out_htmls_, "LandingPage", "sqlite")
       backup_link_data(.dir, "DocumentLinks")
       backup_link_data(.dir, "LandingPage")
     }
@@ -342,7 +382,7 @@ if (FALSE) {
   # Master Index
   edgar_get_master_index(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = "PeterParker@Outlook.com",
+    .user = "TestUser@Outlook.com",
     .from = NULL,
     .to = NULL,
     .verbose = TRUE
@@ -361,11 +401,11 @@ if (FALSE) {
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .user = "PeterParker@Outlook.com",
-    .from = 2010.1,
+    .from = 2014.1,
     .to = 2024.4,
     .ciks = NULL,
     .formtypes = forms,
-    .workers = 10L,
+    .workers = 5L,
     .verbose = TRUE
   )
 

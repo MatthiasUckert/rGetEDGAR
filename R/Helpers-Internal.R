@@ -1,3 +1,5 @@
+
+
 if (FALSE) {
   .msg <- "Test Message"
   .verbose <- TRUE
@@ -14,6 +16,62 @@ if (FALSE) {
   .to <- NULL
   .ciks <- NULL
   .types <- NULL
+  lp_ <- get_directories(.dir)
+  .path <- lp_$Logs$DocumentLinks
+  .loop <- "YearQuarter: 2023.1, Loop: 5"
+  .function <- "function"
+  .part <- "Retrieve Data"
+  .error <- "Test Message"
+}
+
+#' Log EDGAR Data Retrieval Operations
+#'
+#' This function creates or appends to a log file tracking EDGAR data retrieval operations.
+#' It uses fast writing operations optimized for high-frequency logging.
+#'
+#' @param .path Character. Path to the log file
+#' @param .loop Character. Current loop iteration identifier (e.g., "YearQuarter: 2023.1, Loop: 5")
+#' @param .function Character. Name of the function being logged
+#' @param .part Character. Part of the process being logged (e.g., "Retrieve Data")
+#' @param .hash_index Character. Hash value for the index
+#' @param .hash_document Character. Hash value for the document
+#' @param .error Character. Error message or status message to log
+#'
+#' @return Invisibly returns TRUE if successful
+#'
+#' @keywords internal
+save_logging <- function(.path, .loop, .function, .part, .hash_index, .hash_document, .error) {
+  # Create log entry with timestamp
+  log_entry <- tibble::tibble(
+    TimeStamp = format(Sys.time(), "%Y-%m-%d %H:%M:%OS6"),
+    Loop = .loop,
+    FunctionName = .function,
+    FunctionPart = .part,
+    HashIndex = .hash_index,
+    HashDocument = .hash_document,
+    ErrorMsg = .error
+  )
+
+  if (!file.exists(.path)) {
+    data.table::fwrite(
+      x = log_entry,
+      file = .path,
+      sep = "|",
+      col.names = TRUE,
+      encoding = "UTF-8"
+    )
+  } else {
+    data.table::fwrite(
+      x = log_entry,
+      file = .path,
+      append = TRUE,
+      sep = "|",
+      col.names = FALSE,
+      encoding = "UTF-8"
+    )
+  }
+
+  invisible(TRUE)
 }
 
 
@@ -483,6 +541,7 @@ write_link_data <- function(.dir, .tab = NULL, .source = c("DocumentLinks", "Lan
       dplyr::distinct(!!!dplyr::syms(params$distinct_cols), .keep_all = TRUE) %>%
       arrow::write_parquet(params$parquet_path)
   }
+  invisible(gc())
 }
 
 #' Backup SEC EDGAR Database Files
@@ -605,33 +664,107 @@ finalize_tables <- function(.tab, .join, .type = c("DocumentLinks", "LandingPage
 #' @description
 #' Downloads and processes document links from an index page.
 #'
-#' @param .url URL of the index page
+#' @param .index_row A single ro of the MasterIndex Table
 #' @param .user User agent string
 #'
 #' @return Tibble with document links data
 #'
 #' @keywords internal
-help_get_document_link <- function(.url, .user) {
+help_get_document_link <- function(.index_row, .user) {
   error_list <- list(
     DocumentLinks = create_error_table("DocumentLinks"),
     LangingPage = create_error_table("LandingPage")
   )
 
-  result_ <- make_get_request(.url, .user)
-  if (inherits(result_, "try-error")) return(error_list)
-  if (httr::status_code(result_) == 429) Sys.sleep(60)
-  if (!httr::status_code(result_) == 200) return(error_list)
+  url_ <- .index_row$UrlIndexPage
+  result_ <- make_get_request(url_, .user)
+  if (inherits(result_, "try-error")) {
+    save_logging(
+      .path = .index_row$PathLog,
+      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+      .function = "help_get_document_link",
+      .part = "1. make_get_request: try-catch",
+      .hash_index = .index_row$HashIndex,
+      .hash_document = NA_character_,
+      .error = as.character(result_)
+    )
+    return(error_list)
+  }
 
+  status_ <- httr::status_code(result_)
+
+  if (status_ != 200) {
+    status_msgs_ <- list(
+      "429" = list(message = "Rate limit exceeded (429)", action = function() Sys.sleep(60)),
+      "403" = list(message = "Access forbidden (403)", action = function() NULL),
+      "404" = list(message = "Page not found (404).", action = function() NULL),
+      "503" = list(message = "Service unavailable (503)", action = function() NULL),
+      "000" = list(message = "Unexpected status code (000)", action = function() NULL)
+    )
+
+    # Get status handler or use default for unknown status codes
+    parse_status_ <- ifelse(status_ %in% c(403, 404, 429, 503), as.character(status_), "000")
+    status_handler_ <- status_msgs_[[parse_status_]]
+    status_msg_ <- gsub("000", status_, status_handler_$message)
+
+    save_logging(
+      .path = .index_row$PathLog,
+      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+      .function = "help_get_document_link",
+      .part = "1. make_get_request: status",
+      .hash_index = .index_row$HashIndex,
+      .hash_document = NA_character_,
+      .error = status_msg_
+    )
+
+    # Execute any associated action (like sleeping for rate limits)
+    status_handler_$action()
+
+    return(error_list)
+  }
 
   content_ <- parse_content(result_, .type = "text")
-  if (inherits(content_, "try-error")) return(error_list)
-  if (is.na(content_)) return(error_list)
+  if (inherits(content_, "try-error")) {
+    save_logging(
+      .path = .index_row$PathLog,
+      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+      .function = "help_get_document_link",
+      .part = "2. parse_content",
+      .hash_index = .index_row$HashIndex,
+      .hash_document = NA_character_,
+      .error = as.character(content_)
+    )
+    return(error_list)
+  }
+  if (is.na(content_)) {
+    save_logging(
+      .path = .index_row$PathLog,
+      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+      .function = "help_get_document_link",
+      .part = "2. parse_content",
+      .hash_index = .index_row$HashIndex,
+      .hash_document = NA_character_,
+      .error = "Content is NA"
+    )
+    return(error_list)
+  }
 
   nodes_ <- rvest::read_html(content_) %>%
     rvest::html_elements(css = "#formDiv") %>%
     rvest::html_elements("table")
 
-  if (length(nodes_) == 0) return(error_list)
+  if (length(nodes_) == 0) {
+    save_logging(
+      .path = .index_row$PathLog,
+      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+      .function = "help_get_document_link",
+      .part = "3. parse_nodes",
+      .hash_index = .index_row$HashIndex,
+      .hash_document = NA_character_,
+      .error = "No table nodes found in #formDiv"
+    )
+    return(error_list)
+  }
 
   out_links_ <- try(purrr::map(
     .x = nodes_,
@@ -654,7 +787,18 @@ help_get_document_link <- function(.url, .user) {
   out_html_ <- tibble::tibble(HTML = content_, Error = FALSE)
 
 
-  if (inherits(out_links_, "try-error")) return(error_list)
+  if (inherits(out_links_, "try-error")) {
+    save_logging(
+      .path = .index_row$PathLog,
+      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+      .function = "help_get_document_link",
+      .part = "4. parse_links",
+      .hash_index = .index_row$HashIndex,
+      .hash_document = NA_character_,
+      .error = as.character(out_links_)
+    )
+    return(error_list)
+  }
 
   return(list(
     DocumentLinks = out_links_,

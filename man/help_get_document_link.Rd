@@ -4,10 +4,10 @@
 \alias{help_get_document_link}
 \title{Get Document Link}
 \usage{
-help_get_document_link(.url, .user)
+help_get_document_link(.index_row, .user)
 }
 \arguments{
-\item{.url}{URL of the index page}
+\item{.index_row}{A single ro of the MasterIndex Table}
 
 \item{.user}{User agent string}
 }
