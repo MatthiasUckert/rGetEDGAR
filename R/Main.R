@@ -199,13 +199,13 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
           UrlIndexPage = purrr::set_names(UrlIndexPage, HashIndex)
           )
 
-      .index_row <- use_[1, ]
 
-      # .url <- use_$UrlIndexPage[1]
+
+      # .index_row <- split(use_, use_$HashIndex)[[1]]
       lst_ <- try(R.utils::withTimeout(
         expr = furrr::future_map(
-          .x = use_$UrlIndexPage,
-          .f = ~ help_get_document_link(.x, .user),
+          .x = split(use_, use_$HashIndex),
+          .f = ~ help_get_document_link(.index_row = .x, .user),
           .options = furrr::furrr_options(seed = TRUE)
         ) %>%
           purrr::transpose() %>%
@@ -276,6 +276,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   }
   write_link_data(.dir, NULL, "DocumentLinks", "parquet")
   write_link_data(.dir, NULL, "LandingPage", "parquet")
+  invisible(gc())
   future::plan("default")
   on.exit(future::plan("default"))
 }
@@ -382,7 +383,7 @@ if (FALSE) {
   # Master Index
   edgar_get_master_index(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = "TestUser@Outlook.com",
+    .user = "PeterParkerLosSpiderHombreABC002581@Outlook.com",
     .from = NULL,
     .to = NULL,
     .verbose = TRUE
@@ -400,7 +401,7 @@ if (FALSE) {
   # Document Links
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = "PeterParker@Outlook.com",
+    .user = "PetroParkerLosSpiderHombreABC002581@Outlook.com",
     .from = 2014.1,
     .to = 2024.4,
     .ciks = NULL,
@@ -424,7 +425,7 @@ if (FALSE) {
     cat("\nDownloading:", doc, "\n")
     edgar_download_document(
       .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-      .user = "PeterParker@Outlook.com",
+      .user = "PeterParkerLosSpiderHombreABC002581@Outlook.com",
       .from = 1995.1,
       .to = 2024.4,
       .ciks = NULL,
