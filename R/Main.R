@@ -267,17 +267,17 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       }
 
       # Write Output -- -- -- -- -- -- -- -- -- -
-      # write_link_data(.dir, out_links_, "DocumentLinks", "sqlite")
-      # write_link_data(.dir, out_htmls_, "LandingPage", "sqlite")
+      write_link_data(.dir, out_links_, "DocumentLinks", "sqlite")
+      write_link_data(.dir, out_htmls_, "LandingPage", "sqlite")
       backup_link_data(.dir, "DocumentLinks")
       backup_link_data(.dir, "LandingPage")
     }
-    write_link_data(.dir, out_links_, "DocumentLinks", "parquet")
-    write_link_data(.dir, out_htmls_, "LandingPage", "parquet")
+
   }
+  write_link_data(.dir, NULL, "DocumentLinks", "parquet")
+  write_link_data(.dir, NULL, "LandingPage", "parquet")
+  future::plan("default")
   on.exit(future::plan("default"))
-  on.exit(write_link_data(.dir, out_links_, "DocumentLinks", "sqlite"))
-  on.exit(write_link_data(.dir, out_htmls_, "LandingPage", "sqlite"))
 }
 
 
