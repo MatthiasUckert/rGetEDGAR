@@ -686,7 +686,7 @@ help_get_document_link <- function(.index_row, .user) {
       .part = "1. make_get_request: try-catch",
       .hash_index = .index_row$HashIndex,
       .hash_document = NA_character_,
-      .error = as.character(result_)
+      .error = paste(as.character(result_), collapse = " ")
     )
     return(error_list)
   }
@@ -732,7 +732,7 @@ help_get_document_link <- function(.index_row, .user) {
       .part = "2. parse_content",
       .hash_index = .index_row$HashIndex,
       .hash_document = NA_character_,
-      .error = as.character(content_)
+      .error = paste(as.character(content_), collapse = " ")
     )
     return(error_list)
   }
@@ -795,7 +795,7 @@ help_get_document_link <- function(.index_row, .user) {
       .part = "4. parse_links",
       .hash_index = .index_row$HashIndex,
       .hash_document = NA_character_,
-      .error = as.character(out_links_)
+      .error = paste(as.character(out_links_), collapse = " ")
     )
     return(error_list)
   }

@@ -197,9 +197,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
         dplyr::mutate(
           PathLog = lp_$Logs$DocumentLinks,
           UrlIndexPage = purrr::set_names(UrlIndexPage, HashIndex)
-          )
-
-
+        )
 
       # .index_row <- split(use_, use_$HashIndex)[[1]]
       lst_ <- try(R.utils::withTimeout(
@@ -220,9 +218,9 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
           .loop = paste0(yqtr_[i], ": ", stringi::stri_pad_left(j, 6, "0")),
           .function = "edgar_get_document_links",
           .part = "1. process_batch",
-          .hash_index = .index_row$HashIndex,
+          .hash_index = paste(use_$HashIndex, collapse = "-"),
           .hash_document = NA_character_,
-          .error = paste("Timeout (30sec) or error in batch processing:", as.character(lst_))
+          .error = paste0("Timeout (30sec) or error in batch processing: ", paste(as.character(lst_), collapse = " "))
         )
         Sys.sleep(60)
         print_verbose("Some error occurred, no worries we are continuing :) ...", .verbose, "\r")
@@ -235,7 +233,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
           .loop = paste0(yqtr_[i], ": ", stringi::stri_pad_left(j, 6, "0")),
           .function = "edgar_get_document_links",
           .part = "2. check_results",
-          .hash_index = .index_row$HashIndex,
+          .hash_index = paste(use_$HashIndex, collapse = "-"),
           .hash_document = NA_character_,
           .error = "No document links found in batch"
         )
@@ -253,12 +251,12 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
           .loop = paste0(yqtr_[i], ": ", stringi::stri_pad_left(j, 6, "0")),
           .function = "edgar_get_document_links",
           .part = "3. finalize_tables",
-          .hash_index = .index_row$HashIndex,
+          .hash_index = paste(use_$HashIndex, collapse = "-"),
           .hash_document = NA_character_,
           .error = paste(
             "Error in finalizing tables:",
-            if (inherits(out_links_, "try-error")) as.character(out_links_),
-            if (inherits(out_htmls_, "try-error")) as.character(out_htmls_)
+            if (inherits(out_links_, "try-error")) paste(as.character(out_links_), collapse = " "),
+            if (inherits(out_htmls_, "try-error")) paste(as.character(out_htmls_), collapse = " ")
           )
         )
         Sys.sleep(60)
@@ -272,7 +270,6 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       backup_link_data(.dir, "DocumentLinks")
       backup_link_data(.dir, "LandingPage")
     }
-
   }
   write_link_data(.dir, NULL, "DocumentLinks", "parquet")
   write_link_data(.dir, NULL, "LandingPage", "parquet")
@@ -365,7 +362,7 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
     cat(
       "\rDocument:", format(i * 10, big.mark = ","), "of", format(n_total, big.mark = ","),
       "| Elapsed:", format(round(elapsed_total / 60, 1), big.mark = ","), "min",
-      "| ETA:",  format(round(eta / 60, 1), big.mark = ","), "min",
+      "| ETA:", format(round(eta / 60, 1), big.mark = ","), "min",
       "|", round(rate, 1), "Docs/Sec                "
     )
   }
@@ -434,7 +431,4 @@ if (FALSE) {
       .verbose = TRUE
     )
   }
-
 }
-
-
