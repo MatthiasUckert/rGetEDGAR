@@ -224,7 +224,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
           .hash_document = NA_character_,
           .error = paste("Timeout (30sec) or error in batch processing:", as.character(lst_))
         )
-        Sys.sleep(10)
+        Sys.sleep(60)
         print_verbose("Some error occurred, no worries we are continuing :) ...", .verbose, "\r")
         next
       }
@@ -239,7 +239,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
           .hash_document = NA_character_,
           .error = "No document links found in batch"
         )
-        Sys.sleep(10)
+        Sys.sleep(60)
         print_verbose("Some error occurred, no worries we are continuing :) ...", .verbose, "\r")
         next
       }
@@ -261,7 +261,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
             if (inherits(out_htmls_, "try-error")) as.character(out_htmls_)
           )
         )
-        Sys.sleep(10)
+        Sys.sleep(60)
         print_verbose("Some error occurred, no worries we are continuing :) ...", .verbose, "\r")
         next
       }
