@@ -163,6 +163,7 @@ DocTypesRaw <- edgar_read_document_links(
     grepl("^EX-101.CAL\\b", Type) ~ "Exhibit 101.CAL (XBRL Calculation) - Exhibits",
     grepl("^EX-101.DEF\\b", Type) ~ "Exhibit 101.DEF (XBRL Definition) - Exhibits",
     grepl("^EX-101.INS\\b", Type) ~ "Exhibit 101.INS (XBRL Instance Document) - Exhibits",
+    grepl("^EX-101.REF\\b", Type) ~ "Exhibit 101.INS (XBRL Reference Document) - Exhibits",
 
     grepl("^EX-102\\b", Type) ~ "Exhibit 102 (Asset Data File) - Exhibits",
     grepl("^EX-103\\b", Type) ~ "Exhibit 103 (Asset Related Documents) - Exhibits",
@@ -204,13 +205,14 @@ DocTypesRaw <- edgar_read_document_links(
 
 
     # Registration and other forms
-    grepl("^20FR12[BG]$", Type) ~ "20FR12 (Foreign Private Issuer Initial Registration) - Registration Forms",
     grepl("^NT[N]* 10-[KQ]", Type) ~ "NT (Notice of Late Filing) - Registration Forms",
     grepl("^(8-A12B|10-12B)\\b", Type) ~ "12B (Securities Registration) - Registration Forms",
     grepl("^DEF 14A\\b", Type) ~ "DEF 14A (Definitive Proxy Statement) - Registration Forms",
     grepl("^NTN\\s?-?10Q", Type) ~ "NTN 10Q (Filing NTN 10Q) - Registration Forms",
 
     # Other document types
+    grepl("^CT ORDER", Type) ~ "CTO (Confidential Treatment Order) - Other Documents",
+    grepl("^GRAPHIC[.0-9A-Z]*$", Type) ~ "GRAPHIC (Graphic File) - Other Documents",
     grepl("^GRAPHIC[.0-9A-Z]*$", Type) ~ "GRAPHIC (Graphic File) - Other Documents",
     grepl("^XML\\b", Type) ~ "XML (XML File) - Other Documents",
     grepl("^COVER\\b", Type) ~ "COVER (Cover File) - Other Documents",

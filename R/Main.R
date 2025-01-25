@@ -151,7 +151,7 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 
   print_verbose("Updating Data", TRUE, "\r")
   write_link_data(.dir, out_links_, "DocumentLinks", "parquet")
-  write_link_data(.dir, out_htmls_, "LandingPage", "parquet")
+  # write_link_data(.dir, out_htmls_, "LandingPage", "parquet")
   invisible(gc())
 
 
@@ -374,13 +374,12 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
 if (FALSE) {
   devtools::load_all(".")
   library(rGetEDGAR)
-  forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A", "S1", "S4", "F1", "F4")
-  forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A")
-  user <- ifelse(
+  forms <- c("10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A", "S1", "S4", "F1", "F4", "CT ORDER")
+  user <- unname(ifelse(
     Sys.info()["sysname"] == "Darwin",
     "PetroParkerLosSpiderHombreABC002581@Outlook.com",
     "TonyStarkIronManWeaponXYZ847263@Outlook.com"
-  )
+  ))
 
   # Master Index
   edgar_get_master_index(
@@ -391,12 +390,12 @@ if (FALSE) {
     .verbose = TRUE
   )
 
-  edgar_read_master_index(
+  tab_master <- edgar_read_master_index(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .from = 1993.1,
-    .to = 2024.4,
+    .from = NULL,
+    .to = NULL,
     .ciks = NULL,
-    .formtypes = forms,
+    .formtypes = "CT ORDER",
     .collect = TRUE
   )
 
@@ -404,23 +403,24 @@ if (FALSE) {
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .user = user,
-    .from = 2014.1,
-    .to = 2024.4,
+    .from = NULL,
+    .to = NULL,
     .ciks = NULL,
     .formtypes = forms,
     .workers = 5L,
     .verbose = TRUE
   )
 
-  edgar_read_document_links(
+  tab_docs <- edgar_read_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .from = 1995.1,
-    .to = 2024.4,
+    .from = NULL,
+    .to = NULL,
     .ciks = NULL,
     .formtypes = forms,
-    .doctypes = NULL,
+    .doctypes = c("Exhibit 10", "10-K", "10-Q", "20-F", "8-K"),
     .collect = TRUE
   )
+
 
   edgar_download_document(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
@@ -429,7 +429,7 @@ if (FALSE) {
     .to = 2024.4,
     .ciks = NULL,
     .formtypes = forms,
-    .doctypes = c("Exhibit 10", "10-K", "10-Q", "8-K", "20-F"),
+    .doctypes = c("Exhibit 10", "10-K", "10-Q", "20-F", "8-K"),
     .verbose = TRUE
   )
 
