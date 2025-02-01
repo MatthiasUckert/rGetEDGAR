@@ -1,15 +1,9 @@
 ## code to prepare `DATASET` dataset goes here
 
 devtools::load_all(".")
+lp_ <- get_directories(fs::dir_create("../_package_debug/rGetEDGAR"))
 
-FormTypesRaw <- edgar_read_master_index(
-  .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-  .from = NULL,
-  .to = NULL,
-  .ciks = NULL,
-  .formtypes = NULL,
-  .collect = FALSE
-) %>%
+Table_FormTypesRaw <- arrow::open_dataset(lp_$MasterIndex$Parquet) %>%
   dplyr::count(FormType, sort = TRUE) %>%
   dplyr::collect() %>%
   dplyr::mutate(FormTypeMod = dplyr::case_when(
@@ -95,22 +89,14 @@ FormTypesRaw <- edgar_read_master_index(
   dplyr::select(FormClass, FormTypeRaw = FormType, FormTypeMod, nDocs = n, Description)
 
 
-FormTypesMod <- FormTypesRaw %>%
+Table_FormTypesMod <- Table_FormTypesRaw %>%
   dplyr::group_by(FormClass, FormTypeMod, Description) %>%
   dplyr::summarise(nDocs = sum(nDocs), .groups = "drop") %>%
   dplyr::select(FormClass, FormTypeMod, nDocs, Description) %>%
   dplyr::arrange(-nDocs)
 
 
-DocTypesRaw <- edgar_read_document_links(
-  .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-  .from = NULL,
-  .to = NULL,
-  .ciks = NULL,
-  .formtypes = NULL,
-  .doctypes = NULL,
-  .collect = FALSE
-) %>%
+Table_DocTypesRaw <- arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
   dplyr::mutate(
     Type = dplyr::if_else(is.na(Type) & Description == "Complete submission text file", "Full Submission Text File", Type)
     ) %>%
@@ -230,18 +216,18 @@ DocTypesRaw <- edgar_read_document_links(
   dplyr::select(DocClass, DocTypeRaw = Type, DocTypeMod, nDocs = n, Description)
 
 
-DocTypesMod <- DocTypesRaw %>%
+Table_DocTypesMod <- Table_DocTypesRaw %>%
   dplyr::group_by(DocClass, DocTypeMod, Description) %>%
   dplyr::summarise(nDocs = sum(nDocs), .groups = "drop") %>%
   dplyr::select(DocClass, DocTypeMod, nDocs, Description) %>%
   dplyr::arrange(-nDocs)
 
 
-usethis::use_data(DocTypesRaw, DocTypesMod, FormTypesRaw, FormTypesMod, overwrite = TRUE)
+usethis::use_data(Table_DocTypesRaw, Table_DocTypesMod, Table_FormTypesRaw, Table_FormTypesMod, overwrite = TRUE)
 
 list(
-  DocTypesRaw = DocTypesRaw,
-  DocTypesMod = DocTypesMod,
-  FormTypesRaw = FormTypesRaw,
-  FormTypesMod = FormTypesMod
+  Table_DocTypesRaw = Table_DocTypesRaw,
+  Table_DocTypesMod = Table_DocTypesMod,
+  Table_FormTypesRaw = Table_FormTypesRaw,
+  Table_FormTypesMod = Table_FormTypesMod
 ) %>% openxlsx::write.xlsx("_debug/FormAndDocType.xlsx", TRUE, TRUE)

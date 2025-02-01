@@ -20,16 +20,19 @@ get_directories <- function(.dir) {
   list(
     MasterIndex = list(
       Sqlite = file.path(dir_master_, "MasterIndex.sqlite"),
-      Parquet = file.path(dir_master_, "MasterIndex.parquet")
+      # Parquet = file.path(dir_master_, "MasterIndex.parquet")
+      Parquet = fs::dir_create(file.path(dir_master_, "MasterIndex"))
     ),
     LandingPage = list(
       Sqlite = file.path(dir_landing_, "LandingPage.sqlite"),
-      Parquet = file.path(dir_landing_, "LandingPage.parquet"),
+      # Parquet = file.path(dir_landing_, "LandingPage.parquet"),
+      Parquet = fs::dir_create(file.path(dir_landing_, "LandingPage")),
       BackUps = fs::dir_create(file.path(dir_landing_, "LandingPageBackUps"))
     ),
     DocumentLinks = list(
       Sqlite = file.path(dir_links_, "DocumentLinks.sqlite"),
-      Parquet = file.path(dir_links_, "DocumentLinks.parquet"),
+      # Parquet = file.path(dir_links_, "DocumentLinks.parquet"),
+      Parquet = fs::dir_create(file.path(dir_links_, "DocumentLinks")),
       BackUps = fs::dir_create(file.path(dir_links_, "DocumentLinksBackUps"))
     ),
     DocumentData = fs::dir_create(file.path(dir_, "DocumentData")),
@@ -239,3 +242,33 @@ print_verbose <- function(.msg, .verbose, .line = "\n") {
   }
 }
 
+
+list_files <- function(.dirs, .reg = NULL, .id = "doc_id", .rec = FALSE) {
+  purrr::map(
+    .x = .dirs,
+    .f = ~ tibble::tibble(path = list.files(.x, .reg, FALSE, TRUE, .rec))
+  ) %>%
+    dplyr::bind_rows() %>%
+    dplyr::mutate(
+      ID = fs::path_ext_remove(basename(path)),
+      path = purrr::set_names(path, !!dplyr::sym(.id))
+    ) %>%
+    dplyr::select(ID, path) %>%
+    purrr::set_names(c(.id, "path"))
+
+}
+
+list_data <- function(.dir) {
+  lp_ <- get_directories(.dir)
+  list_files(
+    .dirs = c(lp_$MasterIndex$Parquet, lp_$DocumentLinks$Parquet, lp_$LandingPage$Parquet)
+  ) %>%
+    tidyr::separate(doc_id, c("Type", "YearQuarter"), sep = "_") %>%
+    tidyr::pivot_wider(names_from = Type, values_from = path)
+}
+
+utils_showHtml <- function(.html) {
+  tmp_ <- tempfile(fileext = ".html")
+  write(.html, tmp_)
+  utils::browseURL(tmp_)
+}

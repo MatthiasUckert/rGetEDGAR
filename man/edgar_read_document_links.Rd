@@ -6,6 +6,7 @@
 \usage{
 edgar_read_document_links(
   .dir,
+  .path = NULL,
   .from = NULL,
   .to = NULL,
   .ciks = NULL,
@@ -16,6 +17,8 @@ edgar_read_document_links(
 }
 \arguments{
 \item{.dir}{Character string specifying the directory where the data is stored}
+
+\item{.path}{Path to Specific File}
 
 \item{.from}{Numeric value specifying the start year.quarter (e.g., 2020.1 for Q1 2020).
 If NULL, defaults to 1993.1}

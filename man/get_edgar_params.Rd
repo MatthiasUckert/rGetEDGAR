@@ -4,7 +4,13 @@
 \alias{get_edgar_params}
 \title{Validate and Process EDGAR Parameters}
 \usage{
-get_edgar_params(.from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL)
+get_edgar_params(
+  .from = NULL,
+  .to = NULL,
+  .ciks = NULL,
+  .formtypes = NULL,
+  .doctypes = NULL
+)
 }
 \arguments{
 \item{.from}{Numeric value for start period (year.quarter)}
@@ -14,6 +20,8 @@ get_edgar_params(.from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL)
 \item{.ciks}{Character vector of CIK numbers}
 
 \item{.formtypes}{Character vector of document types}
+
+\item{.doctypes}{Character vector of document types to filter}
 }
 \value{
 A list containing processed parameters:
@@ -21,7 +29,8 @@ A list containing processed parameters:
 \item from: Start period (defaults to 1993.1)
 \item to: End period (defaults to current quarter)
 \item ciks: Processed CIK numbers
-\item formtypes: Processed document types
+\item formtypes: Processed FormTypes
+\item formtypes: Processed DocumentTypes
 }
 }
 \description{

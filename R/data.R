@@ -14,7 +14,7 @@
 #'
 #' @source SEC EDGAR database master index files
 #' @keywords datasets SEC EDGAR filings forms
-"FormTypesRaw"
+"Table_FormTypesRaw"
 
 #' SEC EDGAR Form Types Dataset (Modified)
 #'
@@ -31,7 +31,7 @@
 #'
 #' @source SEC EDGAR database master index files
 #' @keywords datasets SEC EDGAR filings forms standardized
-"FormTypesMod"
+"Table_FormTypesMod"
 
 #' SEC EDGAR Document Types Dataset (Raw)
 #'
@@ -49,7 +49,7 @@
 #'
 #' @source SEC EDGAR database document indices
 #' @keywords datasets SEC EDGAR filings documents exhibits
-"DocTypesRaw"
+"Table_DocTypesRaw"
 
 #' SEC EDGAR Document Types Dataset (Modified)
 #'
@@ -66,4 +66,4 @@
 #'
 #' @source SEC EDGAR database document indices
 #' @keywords datasets SEC EDGAR filings documents exhibits standardized
-"DocTypesMod"
+"Table_DocTypesMod"

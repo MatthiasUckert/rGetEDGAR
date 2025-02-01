@@ -8,7 +8,8 @@ write_link_data(
   .dir,
   .tab = NULL,
   .source = c("DocumentLinks", "LandingPage"),
-  .target = c("sqlite", "parquet")
+  .target = c("sqlite", "parquet"),
+  .verbose = FALSE
 )
 }
 \arguments{
@@ -17,11 +18,11 @@ write_link_data(
 \item{.tab}{Optional data frame or tibble containing new data to be written.
 Required when writing to SQLite, ignored when converting to Parquet.}
 
-\item{.source}{Character string specifying the data type: either "DocumentLinks"
-or "LandingPage"}
+\item{.source}{Character string specifying the data type: either "DocumentLinks" or "LandingPage"}
 
-\item{.target}{Character string specifying the target format: either "sqlite"
-or "parquet"}
+\item{.target}{Character string specifying the target format: either "sqlite" or "parquet"}
+
+\item{.verbose}{Logical indicating whether to print progress messages}
 }
 \description{
 Writes or transfers SEC EDGAR data (document links or landing pages) between

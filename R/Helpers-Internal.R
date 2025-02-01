@@ -85,17 +85,19 @@ save_logging <- function(.path, .loop, .function, .part, .hash_index, .hash_docu
 #' @param .to Numeric value for end period (year.quarter)
 #' @param .ciks Character vector of CIK numbers
 #' @param .formtypes Character vector of document types
+#' @param .doctypes Character vector of document types to filter
 #'
 #' @return A list containing processed parameters:
 #' \itemize{
 #'   \item from: Start period (defaults to 1993.1)
 #'   \item to: End period (defaults to current quarter)
 #'   \item ciks: Processed CIK numbers
-#'   \item formtypes: Processed document types
+#'   \item formtypes: Processed FormTypes
+#'   \item formtypes: Processed DocumentTypes
 #' }
 #'
 #' @keywords internal
-get_edgar_params <- function(.from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL) {
+get_edgar_params <- function(.from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL) {
   # Process time periods
   year_current_ <- lubridate::year(Sys.Date())
   qtr_current_ <- lubridate::quarter(Sys.Date()) - 1L
@@ -106,8 +108,17 @@ get_edgar_params <- function(.from = NULL, .to = NULL, .ciks = NULL, .formtypes 
     from = ifelse(is.null(.from), 1993.1, .from),
     to = ifelse(is.null(.to), current_period_, .to),
     ciks = if (is.null(.ciks)) NA_character_ else .ciks,
-    formtypes = if (is.null(.formtypes)) NA_character_ else .formtypes
+    formtypes = if (is.null(.formtypes)) NA_character_ else .formtypes,
+    doctypes = if (is.null(.doctypes)) NA_character_ else .doctypes
   )
+}
+
+if (FALSE) {
+  .from = 1995.1
+  .to = 2024.4
+  .ciks = NULL
+  .formtypes = NULL
+  .doctypes = c("Exhibit 10", "10-K", "10-Q", "20-F", "8-K")
 }
 
 
@@ -142,6 +153,17 @@ filter_edgar_data <- function(.tab, .params) {
     tab_ <- dplyr::filter(tab_, YearQuarter <= .params$to)
   }
 
+  if (!is.na(.params$doctypes)) {
+    tab_doc_types_ <- tibble::tibble(DocTypeMod = .params$doctypes) %>%
+      dplyr::left_join(get("Table_DocTypesRaw"), by = "DocTypeMod")
+    nas_doc_types_ <- dplyr::filter(tab_doc_types_, is.na(DocTypeMod))
+    if (nrow(nas_doc_types_) > 0) {
+      miss_ <- paste(sort(unique(nas_doc_types_$DocTypeMod)), collapse = ", ")
+      msg_ <- paste0("Following Requested DocTypes do not exist: ", miss_, " (Check 'Table_DocTypesRaw')")
+      stop(msg_, call. = FALSE)
+    }
+    tab_ <- dplyr::filter(tab_, Type <= tab_doc_types_$DocTypeRaw)
+  }
 
   return(tab_)
 }
@@ -503,43 +525,62 @@ create_error_table <- function(.source = c("DocumentLinks", "LandingPage")) {
 #' @param .dir Base directory for the SEC data storage
 #' @param .tab Optional data frame or tibble containing new data to be written.
 #'            Required when writing to SQLite, ignored when converting to Parquet.
-#' @param .source Character string specifying the data type: either "DocumentLinks"
-#'               or "LandingPage"
-#' @param .target Character string specifying the target format: either "sqlite"
-#'               or "parquet"
+#' @param .source Character string specifying the data type: either "DocumentLinks" or "LandingPage"
+#' @param .target Character string specifying the target format: either "sqlite" or "parquet"
+#' @param .verbose Logical indicating whether to print progress messages
 #' @keywords internal
-write_link_data <- function(.dir, .tab = NULL, .source = c("DocumentLinks", "LandingPage"),
-                            .target = c("sqlite", "parquet")) {
+write_link_data <- function(
+    .dir, .tab = NULL,
+    .source = c("DocumentLinks", "LandingPage"),
+    .target = c("sqlite", "parquet"),
+    .verbose = FALSE
+    ) {
   # Get directory paths
   lp_ <- get_directories(.dir)
 
   # Set parameters based on source type
-  params <- list(
+  params_ <- list(
     DocumentLinks = list(
-      sqlite_path = lp_$DocumentLinks$Sqlite,
-      parquet_path = lp_$DocumentLinks$Parquet,
+      PathSqlite = lp_$DocumentLinks$Sqlite,
+      DirParquet = lp_$DocumentLinks$Parquet,
       table_name = "document_links",
       distinct_cols = c("HashIndex", "HashDocument")
     ),
     LandingPage = list(
-      sqlite_path = lp_$LandingPage$Sqlite,
-      parquet_path = lp_$LandingPage$Parquet,
+      PathSqlite = lp_$LandingPage$Sqlite,
+      DirParquet = lp_$LandingPage$Parquet,
       table_name = "landing_page",
       distinct_cols = "HashIndex"
     )
   )[[.source]]
 
   # Connect to SQLite database
-  con_ <- DBI::dbConnect(RSQLite::SQLite(), params$sqlite_path)
+  table_ <- params_$table_name
+  con_ <- DBI::dbConnect(RSQLite::SQLite(), params_$PathSqlite)
   on.exit(suppressWarnings(DBI::dbDisconnect(con_)), add = TRUE)
+  query_idx_ <- paste0("CREATE INDEX IF NOT EXISTS idx_yq_", table_, " ON ", table_, "(YearQuarter)")
+  DBI::dbExecute(con_, query_idx_)
 
   if (.target == "sqlite") {
-    DBI::dbWriteTable(con_, params$table_name, .tab, append = TRUE)
+    DBI::dbWriteTable(con_, params_$table_name, .tab, append = TRUE)
   } else {
-    dplyr::tbl(con_, params$table_name) %>%
-      dplyr::collect() %>%
-      dplyr::distinct(!!!dplyr::syms(params$distinct_cols), .keep_all = TRUE) %>%
-      arrow::write_parquet(params$parquet_path)
+
+    query_dis_ <- paste("SELECT DISTINCT YearQuarter FROM", table_)
+    yq_ <- sort(dplyr::pull(DBI::dbGetQuery(con_, query_dis_), YearQuarter))
+
+    for (i in seq_len(length(yq_))) {
+      use_yq_ <- yq_[i]
+      nam_yq_ <- paste0(.source, "_", gsub("\\.", "-", use_yq_), ".parquet")
+      fil_yq_ <- file.path(params_$DirParquet, nam_yq_)
+      msg_yq_ <- paste0("Saving Data: ", .source, ": " , use_yq_)
+      print_verbose(msg_yq_, .verbose, .line = "\r")
+
+      dplyr::tbl(con_, params_$table_name) %>%
+        dplyr::filter(YearQuarter == use_yq_) %>%
+        dplyr::collect() %>%
+        dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
+        arrow::write_parquet(fil_yq_)
+    }
   }
   invisible(gc())
 }
@@ -580,8 +621,7 @@ backup_link_data <- function(.dir, .source = c("DocumentLinks", "LandingPage")) 
   if (lubridate::hour(Sys.time()) %in% seq(3, 24, 3)) {
     # Create timestamp and backup filepath
     time_ <- format(Sys.time(), "%Y-%m-%d-%H")
-    file_ <- file.path(params$backup_dir,
-                       paste0(time_, "_", params$file_prefix, ".zip"))
+    file_ <- file.path(params$backup_dir, paste0(time_, "_", params$file_prefix, ".zip"))
 
     # Create backup if it doesn't exist
     if (!file.exists(file_)) {
@@ -678,91 +718,38 @@ help_get_document_link <- function(.index_row, .user) {
 
   url_ <- .index_row$UrlIndexPage
   result_ <- make_get_request(url_, .user)
+
+
   if (inherits(result_, "try-error")) {
-    save_logging(
-      .path = .index_row$PathLog,
-      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
-      .function = "help_get_document_link",
-      .part = "1. make_get_request: try-catch",
-      .hash_index = .index_row$HashIndex,
-      .hash_document = NA_character_,
-      .error = paste(as.character(result_), collapse = " ")
-    )
     return(error_list)
   }
 
-  status_ <- httr::status_code(result_)
-
-  if (status_ != 200) {
-    status_msgs_ <- list(
-      "429" = list(message = "Rate limit exceeded (429)", action = function() Sys.sleep(60)),
-      "403" = list(message = "Access forbidden (403)", action = function() NULL),
-      "404" = list(message = "Page not found (404).", action = function() NULL),
-      "503" = list(message = "Service unavailable (503)", action = function() NULL),
-      "000" = list(message = "Unexpected status code (000)", action = function() NULL)
-    )
-
-    # Get status handler or use default for unknown status codes
-    parse_status_ <- ifelse(status_ %in% c(403, 404, 429, 503), as.character(status_), "000")
-    status_handler_ <- status_msgs_[[parse_status_]]
-    status_msg_ <- gsub("000", status_, status_handler_$message)
-
-    save_logging(
-      .path = .index_row$PathLog,
-      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
-      .function = "help_get_document_link",
-      .part = "1. make_get_request: status",
-      .hash_index = .index_row$HashIndex,
-      .hash_document = NA_character_,
-      .error = status_msg_
-    )
-
-    # Execute any associated action (like sleeping for rate limits)
-    status_handler_$action()
-
+  if (httr::status_code(result_) != 200) {
     return(error_list)
   }
 
   content_ <- parse_content(result_, .type = "text")
   if (inherits(content_, "try-error")) {
-    save_logging(
-      .path = .index_row$PathLog,
-      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
-      .function = "help_get_document_link",
-      .part = "2. parse_content",
-      .hash_index = .index_row$HashIndex,
-      .hash_document = NA_character_,
-      .error = paste(as.character(content_), collapse = " ")
-    )
     return(error_list)
   }
+
   if (is.na(content_)) {
-    save_logging(
-      .path = .index_row$PathLog,
-      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
-      .function = "help_get_document_link",
-      .part = "2. parse_content",
-      .hash_index = .index_row$HashIndex,
-      .hash_document = NA_character_,
-      .error = "Content is NA"
-    )
     return(error_list)
   }
+
+  # utils_showHtml(content_)
 
   nodes_ <- rvest::read_html(content_) %>%
     rvest::html_elements(css = "#formDiv") %>%
     rvest::html_elements("table")
 
   if (length(nodes_) == 0) {
-    save_logging(
-      .path = .index_row$PathLog,
-      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
-      .function = "help_get_document_link",
-      .part = "3. parse_nodes",
-      .hash_index = .index_row$HashIndex,
-      .hash_document = NA_character_,
-      .error = "No table nodes found in #formDiv"
-    )
+    nodes_ <- rvest::read_html(content_) %>%
+      rvest::html_elements(css = ".formDiv") %>%
+      rvest::html_elements("table")
+  }
+
+  if (length(nodes_) == 0) {
     return(error_list)
   }
 
@@ -788,15 +775,6 @@ help_get_document_link <- function(.index_row, .user) {
 
 
   if (inherits(out_links_, "try-error")) {
-    save_logging(
-      .path = .index_row$PathLog,
-      .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
-      .function = "help_get_document_link",
-      .part = "4. parse_links",
-      .hash_index = .index_row$HashIndex,
-      .hash_document = NA_character_,
-      .error = paste(as.character(out_links_), collapse = " ")
-    )
     return(error_list)
   }
 
@@ -804,6 +782,24 @@ help_get_document_link <- function(.index_row, .user) {
     DocumentLinks = out_links_,
     LangingPage = out_html_
   ))
+}
+
+help_doclinks_get_idxs <- function(.path_doclinks, .path_masteridx, .params, .workers) {
+  if (!is.na(.path_doclinks)) {
+    prc_ <- arrow::open_dataset(.path_doclinks) %>%
+      dplyr::distinct(HashIndex) %>%
+      dplyr::collect() %>%
+      dplyr::pull()
+  } else {
+    prc_ <- "Nothing to Worry :)"
+  }
+
+  use_ <- arrow::open_dataset(.path_masteridx) %>%
+    filter_edgar_data(.params) %>%
+    dplyr::filter(!HashIndex %in% prc_) %>%
+    dplyr::collect() %>%
+    dplyr::mutate(Split = ceiling(dplyr::row_number() / .workers)) %>%
+    tidyr::nest(.by = Split)
 }
 
 
@@ -896,6 +892,112 @@ get_temprorary_document_download <- function(.dir, .from, .to, .ciks, .formtypes
 
 
 
+
+# Logging Files -------------------------------------------------------------------------------
+# if (inherits(result_, "try-error")) {
+#   save_logging(
+#     .path = .index_row$PathLog,
+#     .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+#     .function = "help_get_document_link",
+#     .part = "1. make_get_request: try-catch",
+#     .hash_index = .index_row$HashIndex,
+#     .hash_document = NA_character_,
+#     .error = paste(as.character(result_), collapse = " ")
+#   )
+#   return(error_list)
+# }
+#
+# if (status_ != 200) {
+#   status_msgs_ <- list(
+#     "429" = list(message = "Rate limit exceeded (429)", action = function() Sys.sleep(60)),
+#     "403" = list(message = "Access forbidden (403)", action = function() NULL),
+#     "404" = list(message = "Page not found (404).", action = function() NULL),
+#     "503" = list(message = "Service unavailable (503)", action = function() NULL),
+#     "000" = list(message = "Unexpected status code (000)", action = function() NULL)
+#   )
+#
+#   # Get status handler or use default for unknown status codes
+#   parse_status_ <- ifelse(status_ %in% c(403, 404, 429, 503), as.character(status_), "000")
+#   status_handler_ <- status_msgs_[[parse_status_]]
+#   status_msg_ <- gsub("000", status_, status_handler_$message)
+#
+#   save_logging(
+#     .path = .index_row$PathLog,
+#     .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+#     .function = "help_get_document_link",
+#     .part = "1. make_get_request: status",
+#     .hash_index = .index_row$HashIndex,
+#     .hash_document = NA_character_,
+#     .error = status_msg_
+#   )
+#
+#   # Execute any associated action (like sleeping for rate limits)
+#   status_handler_$action()
+#
+#   return(error_list)
+# }
+#
+# if (inherits(content_, "try-error")) {
+#   save_logging(
+#     .path = .index_row$PathLog,
+#     .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+#     .function = "help_get_document_link",
+#     .part = "2. parse_content",
+#     .hash_index = .index_row$HashIndex,
+#     .hash_document = NA_character_,
+#     .error = paste(as.character(content_), collapse = " ")
+#   )
+#   return(error_list)
+# }
+# if (is.na(content_)) {
+#   save_logging(
+#     .path = .index_row$PathLog,
+#     .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+#     .function = "help_get_document_link",
+#     .part = "2. parse_content",
+#     .hash_index = .index_row$HashIndex,
+#     .hash_document = NA_character_,
+#     .error = "Content is NA"
+#   )
+#   return(error_list)
+# }
+#
+# if (length(nodes_) == 0) {
+#   save_logging(
+#     .path = .index_row$PathLog,
+#     .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+#     .function = "help_get_document_link",
+#     .part = "3. parse_nodes",
+#     .hash_index = .index_row$HashIndex,
+#     .hash_document = NA_character_,
+#     .error = "No table nodes found in #formDiv"
+#   )
+#   return(error_list)
+# }
+# if (length(nodes_) == 0) {
+#   save_logging(
+#     .path = .index_row$PathLog,
+#     .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+#     .function = "help_get_document_link",
+#     .part = "3. parse_nodes",
+#     .hash_index = .index_row$HashIndex,
+#     .hash_document = NA_character_,
+#     .error = "No table nodes found in #formDiv"
+#   )
+#   return(error_list)
+# }
+# if (inherits(out_links_, "try-error")) {
+#   save_logging(
+#     .path = .index_row$PathLog,
+#     .loop = paste0(.index_row$YearQuarter, ": ", stringi::stri_pad_left(.index_row$Split, 6, "0")),
+#     .function = "help_get_document_link",
+#     .part = "4. parse_links",
+#     .hash_index = .index_row$HashIndex,
+#     .hash_document = NA_character_,
+#     .error = paste(as.character(out_links_), collapse = " ")
+#   )
+#   return(error_list)
+# }
 
 #' #' Get Processed Documents
 #' #'

@@ -11,11 +11,9 @@ edgar_get_master_index(.dir, .user, .from = NULL, .to = NULL, .verbose = TRUE)
 
 \item{.user}{Character string specifying the user agent to be used in HTTP requests}
 
-\item{.from}{Numeric value specifying the start year.quarter (e.g., 2020.1 for Q1 2020).
-If NULL, defaults to 1993.1}
+\item{.from}{Numeric value specifying the start year.quarter (e.g., 2020.1 for Q1 2020). If NULL, defaults to 1993.1}
 
-\item{.to}{Numeric value specifying the end year.quarter.
-If NULL, defaults to current quarter}
+\item{.to}{Numeric value specifying the end year.quarter. If NULL, defaults to current quarter}
 
 \item{.verbose}{Logical indicating whether to print progress messages}
 }

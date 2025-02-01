@@ -5,6 +5,7 @@
 #' The master index contains metadata about all SEC filings.
 #'
 #' @param .dir Character string specifying the directory where the data is stored
+#' @param .path Path to Specific File
 #' @param .from Numeric value specifying the start year.quarter (e.g., 2020.1 for Q1 2020).
 #'             If NULL, defaults to 1993.1
 #' @param .to Numeric value specifying the end year.quarter.
@@ -46,19 +47,20 @@
 #'   .collect = FALSE
 #' )
 #' }
-edgar_read_master_index <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .collect = TRUE) {
-  # Get validated parameters
-  params <- get_edgar_params(.from, .to, .ciks, .formtypes)
+edgar_read_master_index <- function(.dir, .path = NULL, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .collect = TRUE) {
+  params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
 
-  # Get directory structure
-  lp_ <- get_directories(.dir)
+  if (!is.null(.path)) {
+    tab_fils <- dplyr::filter(list_data(.dir), MasterIndex == .path)
+    msg_ <- paste0("MasterIndex File: '", basename(.path), "' does not exist")
+  } else {
+    tab_fils <- list_data(.dir)
+    msg_ <- paste0("MasterIndex Folder is empty")
+  }
+  if (nrow(tab_fils) == 0) stop(msg_, call. = FALSE)
 
-  # Open and filter dataset
-  arr_ <- arrow::open_dataset(lp_$MasterIndex$Parquet) %>%
-    dplyr::filter(dplyr::between(YearQuarter, params$from, params$to)) %>%
-    filter_edgar_data(params)
+  arr_ <- filter_edgar_data(arrow::open_dataset(.path), params_)
 
-  # Return based on collect parameter
   if (.collect) {
     return(dplyr::collect(arr_))
   } else {
@@ -73,6 +75,7 @@ edgar_read_master_index <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL
 #' Document links contain metadata about individual documents within each filing.
 #'
 #' @param .dir Character string specifying the directory where the data is stored
+#' @param .path Path to Specific File
 #' @param .from Numeric value specifying the start year.quarter (e.g., 2020.1 for Q1 2020).
 #'             If NULL, defaults to 1993.1
 #' @param .to Numeric value specifying the end year.quarter.
@@ -98,52 +101,34 @@ edgar_read_master_index <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL
 #' }
 #'
 #' @export
-edgar_read_document_links <- function(.dir, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .collect = TRUE) {
-  # Get validated parameters
-  params <- get_edgar_params(.from, .to, .ciks, .formtypes)
+edgar_read_document_links <- function(.dir, .path = NULL, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .collect = TRUE) {
+  params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
 
-  # Get directory structure
-  lp_ <- get_directories(.dir)
-
-  check_null_ <- is.null(.from) + is.null(.to) + is.null(.ciks) + is.null(.formtypes) == 4
-  if (!check_null_) {
-    hash_idx_ <- edgar_read_master_index(.dir, .from, .to, .ciks, .formtypes, FALSE) %>%
-      dplyr::distinct(HashIndex) %>%
-      dplyr::collect() %>%
-      dplyr::pull(HashIndex)
-
-    arr_ <- arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
-      dplyr::filter(HashIndex %in% hash_idx_)
+  if (!is.null(.path)) {
+    tab_fils <- dplyr::filter(list_data(.dir), DocumentLinks == .path)
+    msg_ <- paste0("DocumentLinks File: '", basename(.path), "' does not exist")
   } else {
-    arr_ <- arrow::open_dataset(lp_$DocumentLinks$Parquet)
+    tab_fils <- list_data(.dir)
+    msg_ <- paste0("DocumentLinks Folder is empty")
   }
+  if (nrow(tab_fils) == 0) stop(msg_, call. = FALSE)
 
-  if (!is.null(.doctypes)) {
-    tab_doc_types_ <- get("DocTypesRaw")
-    vec_doc_types_ <- sort(unique(tab_doc_types_$DocTypeMod))
-    if (!all(.doctypes %in% vec_doc_types_)) {
-      stop(paste0(".doctype must be any of:\n", paste(paste0("'", vec_doc_types_, "'"), collapse = ", ")), call. = FALSE)
-    }
+  idx_ <- arrow::open_dataset(tab_fils$MasterIndex) %>%
+    filter_edgar_data(get_edgar_params(.from, .to, .ciks, .formtypes)) %>%
+    dplyr::distinct(HashIndex) %>%
+    dplyr::collect() %>%
+    dplyr::pull()
 
-    arr_ <- arr_ %>%
-      dplyr::rename(DocTypeRaw = Type) %>%
-      dplyr::inner_join(
-        y = tab_doc_types_ %>%
-          dplyr::filter(DocTypeMod %in% .doctypes) %>%
-          dplyr::select(-c(nDocs, Description)) %>%
-          arrow::as_arrow_table(),
-        by = "DocTypeRaw"
-      ) %>%
-      dplyr::relocate(c(DocClass, DocTypeMod), .before = DocTypeRaw) %>%
-      dplyr::filter(Error == 0)
-  }
+  arr_ <- arrow::open_dataset(tab_fils$DocumentLinks) %>%
+    dplyr::filter(HashIndex %in% idx_) %>%
+    filter_edgar_data(get_edgar_params(.doctypes))
 
-  # Return based on collect parameter
   if (.collect) {
     return(dplyr::collect(arr_))
   } else {
     return(arr_)
   }
+
 }
 
 

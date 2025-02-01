@@ -15,5 +15,7 @@ utils::globalVariables(c(
 
   # Document Content Variables
   "HTML", "TextRaw", "TextMod", "DirOut", "OutExt", "FileExt",
-  "DocTypeMod", "DocNum", "nDocs", "DocClass", "DocTypeRaw"
+  "DocTypeMod", "DocNum", "nDocs", "DocClass", "DocTypeRaw",
+
+  "DocumentLinks", "MasterIndex", "doc_id", "path", "ID"
 ))
