@@ -96,7 +96,7 @@ edgar_get_master_index <- function(.dir, .user, .from = NULL, .to = NULL, .verbo
     use_yq_ <- yq_[i]
     nam_yq_ <- paste0("MasterIndex_", gsub("\\.", "-", use_yq_), ".parquet")
     fil_yq_ <- file.path(lp_$MasterIndex$Parquet, nam_yq_)
-    msg_yq_ <- paste0("Saving Data (MasterIndex): " , use_yq_)
+    msg_yq_ <- paste0("Saving Data (MasterIndex): ", use_yq_)
     print_verbose(msg_yq_, .verbose, .line = "\r")
 
     dplyr::tbl(con_, table_) %>%
@@ -223,7 +223,6 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       write_link_data(.dir, out_htmls_, "LandingPage", "sqlite")
       backup_link_data(.dir, "DocumentLinks")
       backup_link_data(.dir, "LandingPage")
-
     }
   }
   future::plan("default")
@@ -233,102 +232,88 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   invisible(gc())
 
   on.exit(future::plan("default"))
-
 }
 
 
-#' Download SEC EDGAR Documents
-#'
-#' @description
-#' Downloads actual documents from SEC EDGAR filings and processes their content.
-#' Supports parallel downloading for improved performance.
-#'
-#' @param .dir Character string specifying the directory where the downloaded data will be stored
-#' @param .user Character string specifying the user agent to be used in HTTP requests
-#' @param .from Numeric value specifying the start year.quarter (e.g., 2020.1 for Q1 2020)
-#' @param .to Numeric value specifying the end year.quarter
-#' @param .ciks Character vector of CIK numbers to filter for specific companies
-#' @param .formtypes Character vector of document types to filter (e.g., "10-K", "10-Q")
-#' @param .doctypes Character vector of document types to filter (e.g., "10-K", "10-Q")
-#' @param .verbose Logical indicating whether to print progress messages
-#'
-#' @details
-#' The function:
-#' 1. Reads from the document links database
-#' 2. Downloads documents in parallel using the specified number of workers
-#' 3. Processes HTML content and extracts text
-#' 4. Stores both raw HTML and processed text
-#' 5. Saves results in Parquet format by CIK
-#'
-#' For each document, stores:
-#' - Original HTML
-#' - Raw extracted text
-#' - Modified/cleaned text
-#'
-#' @return No return value, called for side effects
-#'
-#' @examples
-#' \dontrun{
-#' edgar_download_document(
-#'   .dir = "edgar_data",
-#'   .user = "your@email.com",
-#'   .from = 2020.1,
-#'   .to = 2021.4,
-#'   .ciks = c("0000320193"), # Apple Inc
-#'   .formtypes = c("10-K", "10-Q"),
-#'   .workers = 4
-#' )
-#' }
-#'
-#' @export
+
+
 edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
-  get_temprorary_document_download(.dir, .from, .to, .ciks, .formtypes, .doctypes)
+  prc_ <- fs::path_ext_remove(unlist(purrr::map(
+    .x = unname(list_files(lp_$DocumentData$Original)[["path"]]),
+    .f = ~ zip::zip_list(.x)[["filename"]]
+  )))
 
+  tab_fils_ <- dplyr::filter(list_data(.dir), !is.na(DocumentLinks)) %>%
+    dplyr::slice(1:30)
 
-  t0_global <- Sys.time() # Keep track of overall time
-  n_total <- nrow(arrow::open_dataset(lp_$Temporary$DocumentData)) # Total number to process
+  time_ <- format(Sys.time(), format = "%Y-%m-%d-%H-%M-%S")
+  dir_tmp_ <- file.path(lp_$Temporary$DocumentData, time_)
 
+  i <- 28
+  for (i in seq_len(nrow(tab_fils_))) {
+    name_yq_ <- tab_fils_$YearQuarter[i]
+    path_yq_ <- tab_fils_$DocumentLinks[i]
+    dir_yq_ <- fs::dir_create(paste0(dir_tmp_, "_", name_yq_))
+    zip_yq_ <- file.path(lp_$DocumentData$Original, paste0(basename(dir_yq_), ".zip"))
 
-  future::plan("multisession", workers = 10L)
-  for (i in seq_len(n_total)) {
-    use_ <- arrow::open_dataset(lp_$Temporary$DocumentData) %>%
-      dplyr::filter(Split == i) %>%
+    print_verbose(paste0(name_yq_, ": Checking Documents"), .verbose, .line = "\r")
+    use_all_ <- edgar_read_document_links(
+      .dir, path_yq_, .from, .to, .ciks, .formtypes, .doctypes, FALSE
+    ) %>%
+      dplyr::filter(Error == 0) %>%
+      dplyr::mutate(DocName = paste0(CIK, "-", HashDocument)) %>%
+      dplyr::filter(!DocName %in% prc_) %>%
       dplyr::collect() %>%
-      dplyr::distinct(HashDocument, .keep_all = TRUE)  %>%
-      dplyr::filter(!is.na(OutExt))
-    lst_ <- split(use_, use_$HashDocument)
-    t0_ <- Sys.time()
+      dplyr::mutate(
+        FileExt = paste0(".", tools::file_ext(UrlDocument)),
+        PathTMP = file.path(dir_yq_, paste0(DocName, FileExt)),
+        UrlDocument = purrr::set_names(UrlDocument, DocName)
+      ) %>%
+      dplyr::filter(!FileExt == ".") %>%
+      dplyr::mutate(Split = ceiling(dplyr::row_number() / 10))
 
-    # .doc_row = lst_[[1]]
-    furrr::future_walk(
-      .x = lst_,
-      .f = ~ help_download_document(.doc_row = .x, .user),
-      .progress = FALSE,
-      .options = furrr::furrr_options(seed = TRUE)
-    )
-    t1_ <- Sys.time()
-
-    # Rate limiting
-    ela_ <- as.numeric(difftime(t1_, t0_, units = "secs"))
-    if (ela_ < 1) {
-      Sys.sleep(1 - ela_ + .05)
+    if (nrow(use_all_) == 0) {
+      next
     }
 
-    # Calculate progress metrics
-    elapsed_total <- as.numeric(difftime(t1_, t0_global, units = "secs"))
-    rate <- (i * 10) / elapsed_total
-    eta <- (n_total - (i * 10)) / rate
+    lst_url_ <- split(use_all_$UrlDocument, use_all_$Split)
+    lst_out_ <- split(use_all_$PathTMP, use_all_$Split)
 
-    cat(
-      "\rDocument:", format(i * 10, big.mark = ","), "of", format(n_total, big.mark = ","),
-      "| Elapsed:", format(round(elapsed_total / 60, 1), big.mark = ","), "min",
-      "| ETA:", format(round(eta / 60, 1), big.mark = ","), "min",
-      "|", round(rate, 1), "Docs/Sec                "
+    future::plan("multisession", workers = 10L)
+    t0_start_ <- Sys.time() # Overall start time for ETA
+    for (j in seq_along(lst_url_)) {
+      t0_loop_ <- Sys.time()
+      furrr::future_walk2(
+        .x = lst_url_[[j]],
+        .y = lst_out_[[j]],
+        .f = ~ help_download_url_request(.x, .user, .y),
+        .progress = FALSE,
+        .options = furrr::furrr_options(seed = TRUE)
+      )
+      diff_loop_ <- as.numeric(difftime(Sys.time(), t0_loop_, units = "secs"))
+      diff_total_ <- as.numeric(difftime(Sys.time(), t0_start_, units = "secs"))
+      Sys.sleep(max(1.05 - diff_loop_, 0))
+      msg_time_ <- format_time(t0_start_, j * 10, length(lst_url_) * 10)
+      msg_rate_ <- paste0(" | Rate: ", format_number((j * 10) / diff_total_, .01), " Req/Sec")
+      msg_loop_ <- paste0(format_number(j * 10), "/", format_number(length(lst_url_) * 10))
+      msg_total_ <- paste0(tab_fils_$YearQuarter[i], ": ", msg_loop_, " | ", msg_time_, msg_rate_)
+      print_verbose(msg_total_, .verbose, .line = "\r")
+    }
+    future::plan("default")
+
+    zip::zipr(
+      zipfile = zip_yq_,
+      files = list_files(dir_yq_)[["path"]],
+      compression_level = 9
     )
+    fs::dir_delete(dir_yq_)
   }
-  future::plan("default")
+
+
+
 }
+
 
 # DeBug ---------------------------------------------------------------------------------------
 if (FALSE) {
@@ -347,7 +332,7 @@ if (FALSE) {
   )
   user <- unname(ifelse(
     Sys.info()["sysname"] == "Darwin",
-    "PetroParkerLosSpiderHombreABC002581@Outlook.com",
+    "PetroParkerLosSpiderHombreABC12@Outlook.com",
     "TonyStarkIronManWeaponXYZ847263@Outlook.com"
   ))
 
@@ -400,16 +385,141 @@ if (FALSE) {
     .to = 2024.4,
     .ciks = NULL,
     .formtypes = forms,
-    .doctypes = c("Exhibit 10", "10-K", "10-Q", "20-F", "8-K"),
+    .doctypes = c("Exhibit 10"),
     .verbose = TRUE
   )
-
 }
 
 
 
 
 # ToBedeleted ---------------------------------------------------------------------------------
+
+#'
+#' #' Download SEC EDGAR Documents
+#' #'
+#' #' @description
+#' #' Downloads actual documents from SEC EDGAR filings and processes their content.
+#' #' Supports parallel downloading for improved performance.
+#' #'
+#' #' @param .dir Character string specifying the directory where the downloaded data will be stored
+#' #' @param .user Character string specifying the user agent to be used in HTTP requests
+#' #' @param .from Numeric value specifying the start year.quarter (e.g., 2020.1 for Q1 2020)
+#' #' @param .to Numeric value specifying the end year.quarter
+#' #' @param .ciks Character vector of CIK numbers to filter for specific companies
+#' #' @param .formtypes Character vector of document types to filter (e.g., "10-K", "10-Q")
+#' #' @param .doctypes Character vector of document types to filter (e.g., "10-K", "10-Q")
+#' #' @param .verbose Logical indicating whether to print progress messages
+#' #'
+#' #' @details
+#' #' The function:
+#' #' 1. Reads from the document links database
+#' #' 2. Downloads documents in parallel using the specified number of workers
+#' #' 3. Processes HTML content and extracts text
+#' #' 4. Stores both raw HTML and processed text
+#' #' 5. Saves results in Parquet format by CIK
+#' #'
+#' #' For each document, stores:
+#' #' - Original HTML
+#' #' - Raw extracted text
+#' #' - Modified/cleaned text
+#' #'
+#' #' @return No return value, called for side effects
+#' #'
+#' #' @examples
+#' #' \dontrun{
+#' #' edgar_download_document(
+#' #'   .dir = "edgar_data",
+#' #'   .user = "your@email.com",
+#' #'   .from = 2020.1,
+#' #'   .to = 2021.4,
+#' #'   .ciks = c("0000320193"), # Apple Inc
+#' #'   .formtypes = c("10-K", "10-Q"),
+#' #'   .workers = 4
+#' #' )
+#' #' }
+#' #'
+#' #' @export
+#' edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .verbose = TRUE) {
+#'   lp_ <- get_directories(.dir)
+#'   get_temprorary_document_download(.dir, .from, .to, .ciks, .formtypes, .doctypes)
+#'
+#'
+#'   t0_global <- Sys.time() # Keep track of overall time
+#'   n_total <- nrow(arrow::open_dataset(lp_$Temporary$DocumentData)) # Total number to process
+#'
+#'
+#'   future::plan("multisession", workers = 10L)
+#'   for (i in seq_len(n_total)) {
+#'     use_ <- arrow::open_dataset(lp_$Temporary$DocumentData) %>%
+#'       dplyr::filter(Split == i) %>%
+#'       dplyr::collect() %>%
+#'       dplyr::distinct(HashDocument, .keep_all = TRUE) %>%
+#'       dplyr::filter(!is.na(OutExt))
+#'     lst_ <- split(use_, use_$HashDocument)
+#'     t0_ <- Sys.time()
+#'
+#'     # .doc_row = lst_[[1]]
+#'     furrr::future_walk(
+#'       .x = lst_,
+#'       .f = ~ help_download_document(.doc_row = .x, .user),
+#'       .progress = FALSE,
+#'       .options = furrr::furrr_options(seed = TRUE)
+#'     )
+#'     t1_ <- Sys.time()
+#'
+#'     # Rate limiting
+#'     ela_ <- as.numeric(difftime(t1_, t0_, units = "secs"))
+#'     if (ela_ < 1) {
+#'       Sys.sleep(1 - ela_ + .05)
+#'     }
+#'
+#'     # Calculate progress metrics
+#'     elapsed_total <- as.numeric(difftime(t1_, t0_global, units = "secs"))
+#'     rate <- (i * 10) / elapsed_total
+#'     eta <- (n_total - (i * 10)) / rate
+#'
+#'     cat(
+#'       "\rDocument:", format(i * 10, big.mark = ","), "of", format(n_total, big.mark = ","),
+#'       "| Elapsed:", format(round(elapsed_total / 60, 1), big.mark = ","), "min",
+#'       "| ETA:", format(round(eta / 60, 1), big.mark = ","), "min",
+#'       "|", round(rate, 1), "Docs/Sec                "
+#'     )
+#'   }
+#'   future::plan("default")
+#' }
+#'
+#'
+
+#
+# tictoc::tic("HTTR Command")
+# furrr::future_walk2(
+#   .x = lst_url_[[1]],
+#   .y = lst_out_[[1]],
+#   .f = ~ help_download_url_request(.x, .user, .y),
+#   .progress = FALSE,
+#   .options = furrr::furrr_options(seed = TRUE)
+# )
+# tictoc::toc()
+# future::plan("default")
+
+
+
+# help_download_make_request <- function(.url, .user, .path_out) {
+#   req_ <- httr2::req_headers(httr2::request(.url), Connection = "keep-alive", `User-Agent` = .user)
+#   sprintf(
+#     'curl -s "%s" %s -o "%s"',
+#     req_$url,
+#     paste(sprintf('-H "%s: %s"', names(req_$headers), unlist(req_$headers)), collapse = " "),
+#     .path_out
+#   )
+# }
+#
+# help_download_cmd_command <- function(.cmd, .wait = FALSE) {
+#   system(.cmd, ignore.stdout = TRUE, intern = TRUE, wait = .wait)
+# }
+
+
 # # Get To be Processed Index Files
 # params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
 # get_to_be_processed_master_index(.dir, .params = params_, .workers)
@@ -540,7 +650,7 @@ if (FALSE) {
 
 #
 #
-# edgar_download_document2 <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .verbose = TRUE) {
+# edgar_download_document3 <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .verbose = TRUE) {
 #   lp_ <- get_directories(.dir)
 #   get_temprorary_document_download(.dir, .from, .to, .ciks, .formtypes, .doctypes)
 #

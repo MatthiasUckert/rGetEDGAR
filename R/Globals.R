@@ -17,5 +17,5 @@ utils::globalVariables(c(
   "HTML", "TextRaw", "TextMod", "DirOut", "OutExt", "FileExt",
   "DocTypeMod", "DocNum", "nDocs", "DocClass", "DocTypeRaw",
 
-  "DocumentLinks", "MasterIndex", "doc_id", "path", "ID"
+  "DocumentLinks", "MasterIndex", "doc_id", "path", "ID", "DocName"
 ))

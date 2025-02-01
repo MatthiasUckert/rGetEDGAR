@@ -24,55 +24,6 @@ if (FALSE) {
   .error <- "Test Message"
 }
 
-#' Log EDGAR Data Retrieval Operations
-#'
-#' This function creates or appends to a log file tracking EDGAR data retrieval operations.
-#' It uses fast writing operations optimized for high-frequency logging.
-#'
-#' @param .path Character. Path to the log file
-#' @param .loop Character. Current loop iteration identifier (e.g., "YearQuarter: 2023.1, Loop: 5")
-#' @param .function Character. Name of the function being logged
-#' @param .part Character. Part of the process being logged (e.g., "Retrieve Data")
-#' @param .hash_index Character. Hash value for the index
-#' @param .hash_document Character. Hash value for the document
-#' @param .error Character. Error message or status message to log
-#'
-#' @return Invisibly returns TRUE if successful
-#'
-#' @keywords internal
-save_logging <- function(.path, .loop, .function, .part, .hash_index, .hash_document, .error) {
-  # Create log entry with timestamp
-  log_entry <- tibble::tibble(
-    TimeStamp = format(Sys.time(), "%Y-%m-%d %H:%M:%OS6"),
-    Loop = .loop,
-    FunctionName = .function,
-    FunctionPart = .part,
-    HashIndex = .hash_index,
-    HashDocument = .hash_document,
-    ErrorMsg = .error
-  )
-
-  if (!file.exists(.path)) {
-    data.table::fwrite(
-      x = log_entry,
-      file = .path,
-      sep = "|",
-      col.names = TRUE,
-      encoding = "UTF-8"
-    )
-  } else {
-    data.table::fwrite(
-      x = log_entry,
-      file = .path,
-      append = TRUE,
-      sep = "|",
-      col.names = FALSE,
-      encoding = "UTF-8"
-    )
-  }
-
-  invisible(TRUE)
-}
 
 
 # Filter EDGAR Data ---------------------------------------------------------------------------
@@ -103,13 +54,27 @@ get_edgar_params <- function(.from = NULL, .to = NULL, .ciks = NULL, .formtypes 
   qtr_current_ <- lubridate::quarter(Sys.Date()) - 1L
   current_period_ <- as.numeric(paste0(year_current_, ".", qtr_current_))
 
+  if (!is.null(.doctypes)) {
+    tab_doc_types_ <- tibble::tibble(DocTypeMod = .doctypes) %>%
+      dplyr::left_join(get("Table_DocTypesRaw"), by = "DocTypeMod")
+    nas_doc_types_ <- dplyr::filter(tab_doc_types_, is.na(DocTypeMod))
+    if (nrow(nas_doc_types_) > 0) {
+      miss_ <- paste(sort(unique(nas_doc_types_$DocTypeMod)), collapse = ", ")
+      msg_ <- paste0("Following Requested DocTypes do not exist: ", miss_, " (Check 'Table_DocTypesRaw')")
+      stop(msg_, call. = FALSE)
+    }
+    doc_types_ <- unique(tab_doc_types_$DocTypeRaw)
+  } else {
+    doc_types_ <- NA_character_
+  }
+
   # Create output list
   list(
     from = ifelse(is.null(.from), 1993.1, .from),
     to = ifelse(is.null(.to), current_period_, .to),
     ciks = if (is.null(.ciks)) NA_character_ else .ciks,
     formtypes = if (is.null(.formtypes)) NA_character_ else .formtypes,
-    doctypes = if (is.null(.doctypes)) NA_character_ else .doctypes
+    doctypes = doc_types_
   )
 }
 
@@ -153,16 +118,8 @@ filter_edgar_data <- function(.tab, .params) {
     tab_ <- dplyr::filter(tab_, YearQuarter <= .params$to)
   }
 
-  if (!is.na(.params$doctypes)) {
-    tab_doc_types_ <- tibble::tibble(DocTypeMod = .params$doctypes) %>%
-      dplyr::left_join(get("Table_DocTypesRaw"), by = "DocTypeMod")
-    nas_doc_types_ <- dplyr::filter(tab_doc_types_, is.na(DocTypeMod))
-    if (nrow(nas_doc_types_) > 0) {
-      miss_ <- paste(sort(unique(nas_doc_types_$DocTypeMod)), collapse = ", ")
-      msg_ <- paste0("Following Requested DocTypes do not exist: ", miss_, " (Check 'Table_DocTypesRaw')")
-      stop(msg_, call. = FALSE)
-    }
-    tab_ <- dplyr::filter(tab_, Type <= tab_doc_types_$DocTypeRaw)
+  if (!all(is.na(.params$doctypes))) {
+    tab_ <- dplyr::filter(tab_, Type %in% .params$doctypes)
   }
 
   return(tab_)
@@ -427,54 +384,6 @@ initialize_edgar_database <- function(.dir, .source = c("DocumentLinks", "Landin
   Sys.sleep(1)
 }
 
-#' Get Master Index Records To Be Processed
-#'
-#' @description
-#' Identifies and prepares master index records that haven't been processed yet. The function:
-#' 1. Retrieves already processed records from the document links database
-#' 2. Filters the master index dataset based on provided parameters
-#' 3. Excludes already processed records
-#' 4. Prepares the data for parallel processing by splitting it into chunks
-#'
-#' @param .dir Base directory for the SEC data storage
-#' @param .params List of filtering parameters from get_edgar_params()
-#' @param .workers Number of parallel workers to use for processing
-#'
-#' @return Writes a parquet file to the temporary directory containing records to be processed,
-#'         with an additional 'Split' column for parallel processing
-#'
-#' @keywords internal
-get_to_be_processed_master_index <- function(.dir, .params, .workers) {
-  lp_ <- get_directories(.dir)
-
-  if (dir.exists(lp_$Temporary$DocumentLinks)) {
-    fs::file_delete(lp_$Temporary$DocumentLinks)
-  }
-
-  prc_ <- arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
-    dplyr::distinct(HashIndex) %>%
-    dplyr::collect() %>%
-    dplyr::pull(HashIndex)
-
-  out_ <- arrow::open_dataset(lp_$MasterIndex$Parquet) %>%
-    filter_edgar_data(.params) %>%
-    dplyr::filter(!HashIndex %in% prc_) %>%
-    dplyr::select(HashIndex, Year, Quarter, YearQuarter, CIK, UrlIndexPage) %>%
-    dplyr::arrange(YearQuarter, CIK) %>%
-    dplyr::collect() %>%
-    dplyr::group_by(YearQuarter) %>%
-    dplyr::mutate(
-      Split = ceiling(dplyr::row_number() / .workers),
-      .before = HashIndex
-    )
-
-
-  if (nrow(out_) > 0) {
-    arrow::write_dataset(out_, lp_$Temporary$DocumentLinks)
-  } else {
-    return(invisible(NULL))
-  }
-}
 
 #' Create Error Table for SEC EDGAR Data Processing
 #'
@@ -638,23 +547,6 @@ backup_link_data <- function(.dir, .source = c("DocumentLinks", "LandingPage")) 
 
 
 
-#' Pull Distinct Column Values from a Table
-#'
-#' @description
-#' Extracts distinct values from a specified column in a database table,
-#' arranges them, and returns them as a vector.
-#'
-#' @param .tab A database table or tibble
-#' @param .col An unquoted column name to extract values from
-#'
-#' @return A vector containing distinct, sorted values from the specified column
-pull_column <- function(.tab, .col) {
-  .tab %>%
-    dplyr::distinct({{ .col }}) %>%
-    dplyr::arrange({{ .col }}) %>%
-    dplyr::collect() %>%
-    dplyr::pull({{ .col }})
-}
 
 #' Finalize SEC EDGAR Tables with Join Operations
 #'
@@ -805,7 +697,6 @@ help_doclinks_get_idxs <- function(.path_doclinks, .path_masteridx, .params, .wo
 
 
 # Download Documents --------------------------------------------------------------------------
-
 #' Download and Save SEC EDGAR Documents
 #'
 #' @description
@@ -813,83 +704,233 @@ help_doclinks_get_idxs <- function(.path_doclinks, .path_masteridx, .params, .wo
 #' Handles text-based documents (htm, xml, xsd, txt) by converting them to parquet,
 #' and binary files (pdf, gif, jpg) by saving them directly.
 #'
-#' @param .doc_row A row with download information
+#' @param .url A download URL
 #' @param .user Character string of the user agent
+#' @param .path_out Output Path
 #'
 #' @return A Document
 #' @keywords internal
-help_download_document <- function(.doc_row, .user) {
-
-  # Create output directory if it doesn't exist
-  fs::dir_create(.doc_row$DirOut)
-
-  # Make HTTP request
-  result_ <- make_get_request(.doc_row$UrlDocument, .user)
-  if (inherits(result_, "try-error") || !httr::status_code(result_) == 200) {
-    return(invisible(NULL))
-  }
-
-  type_ <- ifelse(.doc_row$OutExt == ".parquet", "text", "raw")
-  content_ <- parse_content(result_, type_)
-
-  if (inherits(content_, "try-error")) {
-    return(invisible(NULL))
-  }
+help_download_url_request <- function(.url, .user, .path_out) {
+  type_ <- ifelse(tools::file_ext(.url) %in% c("html", "htm", "xml", "xsd", "txt"), "text", "raw")
+  result_ <- try(make_get_request(.url, .user), silent = TRUE)
+  content_ <- try(parse_content(result_, type_), silent = TRUE)
 
   if (type_ == "text") {
-    tibble::tibble(
-      HashDocument = .doc_row$HashDocument,
-      Text = content_
-    ) %>% arrow::write_parquet(.doc_row$PathOut)
+    try(write(content_, .path_out), silent = TRUE)
   } else {
-    writeBin(content_, .doc_row$PathOut)
+    try(writeBin(content_, .path_out), silent = TRUE)
   }
 }
 
 
-#' Prepare Temporary Document Download Data
-#'
-#' @description
-#' Creates a temporary dataset of documents to be downloaded from SEC EDGAR,
-#' organizing them by CIK and document type. The function processes document URLs
-#' and prepares file paths for storage.
-#'
-#' @param .dir Character string specifying the base directory for data storage
-#' @param .from Numeric value specifying the start year.quarter (e.g., 2020.1)
-#' @param .to Numeric value specifying the end year.quarter
-#' @param .ciks Character vector of Central Index Key (CIK) numbers to filter
-#' @param .formtypes Character vector of form types to filter (e.g., "10-K", "10-Q")
-#' @param .doctypes Character vector of document types to filter
-#'
-#' @return No return value, called for side effects (writes to temporary Parquet file)
-#'
-#' @keywords internal
-get_temprorary_document_download <- function(.dir, .from, .to, .ciks, .formtypes, .doctypes) {
 
-  lp_ <- get_directories(.dir)
 
-  edgar_read_document_links(.dir, .from, .to, .ciks, .formtypes, .doctypes, FALSE) %>%
-    dplyr::select(HashDocument, CIK, DocTypeMod, UrlDocument) %>%
-    dplyr::collect() %>%
-    dplyr::mutate(
-      FileExt = tools::file_ext(UrlDocument),
-      OutExt = dplyr::case_when(
-        FileExt %in% c("html", "htm", "xml", "xsd", "txt") ~ ".parquet",
-        FileExt %in% c("gif", "jpg", "pdf") ~ paste0(".", FileExt)
-      ),
-      DirOut = file.path(lp_$DocumentData, CIK, gsub("\\s", "", DocTypeMod)),
-      PathOut = file.path(DirOut, paste0(HashDocument, OutExt))
-    ) %>%
-    # dplyr::filter(is.na(OutExt)) %>%
-    dplyr::filter(!FileExt == "") %>%
-    dplyr::filter(!file.exists(PathOut)) %>%
-    dplyr::mutate(
-      DocNum = dplyr::row_number(),
-      Split = ceiling(DocNum / 10)
-    ) %>%
-    arrow::write_parquet(lp_$Temporary$DocumentData)
-}
 
+# To Be Deletd --------------------------------------------------------------------------------
+#' #' Log EDGAR Data Retrieval Operations
+#' #'
+#' #' This function creates or appends to a log file tracking EDGAR data retrieval operations.
+#' #' It uses fast writing operations optimized for high-frequency logging.
+#' #'
+#' #' @param .path Character. Path to the log file
+#' #' @param .loop Character. Current loop iteration identifier (e.g., "YearQuarter: 2023.1, Loop: 5")
+#' #' @param .function Character. Name of the function being logged
+#' #' @param .part Character. Part of the process being logged (e.g., "Retrieve Data")
+#' #' @param .hash_index Character. Hash value for the index
+#' #' @param .hash_document Character. Hash value for the document
+#' #' @param .error Character. Error message or status message to log
+#' #'
+#' #' @return Invisibly returns TRUE if successful
+#' #'
+#' #' @keywords internal
+#' save_logging <- function(.path, .loop, .function, .part, .hash_index, .hash_document, .error) {
+#'   # Create log entry with timestamp
+#'   log_entry <- tibble::tibble(
+#'     TimeStamp = format(Sys.time(), "%Y-%m-%d %H:%M:%OS6"),
+#'     Loop = .loop,
+#'     FunctionName = .function,
+#'     FunctionPart = .part,
+#'     HashIndex = .hash_index,
+#'     HashDocument = .hash_document,
+#'     ErrorMsg = .error
+#'   )
+#'
+#'   if (!file.exists(.path)) {
+#'     data.table::fwrite(
+#'       x = log_entry,
+#'       file = .path,
+#'       sep = "|",
+#'       col.names = TRUE,
+#'       encoding = "UTF-8"
+#'     )
+#'   } else {
+#'     data.table::fwrite(
+#'       x = log_entry,
+#'       file = .path,
+#'       append = TRUE,
+#'       sep = "|",
+#'       col.names = FALSE,
+#'       encoding = "UTF-8"
+#'     )
+#'   }
+#'
+#'   invisible(TRUE)
+#' }
+
+
+#' #' Pull Distinct Column Values from a Table
+#' #'
+#' #' @description
+#' #' Extracts distinct values from a specified column in a database table,
+#' #' arranges them, and returns them as a vector.
+#' #'
+#' #' @param .tab A database table or tibble
+#' #' @param .col An unquoted column name to extract values from
+#' #'
+#' #' @return A vector containing distinct, sorted values from the specified column
+#' pull_column <- function(.tab, .col) {
+#'   .tab %>%
+#'     dplyr::distinct({{ .col }}) %>%
+#'     dplyr::arrange({{ .col }}) %>%
+#'     dplyr::collect() %>%
+#'     dplyr::pull({{ .col }})
+#' }
+#'
+
+#'
+#' #' Get Master Index Records To Be Processed
+#' #'
+#' #' @description
+#' #' Identifies and prepares master index records that haven't been processed yet. The function:
+#' #' 1. Retrieves already processed records from the document links database
+#' #' 2. Filters the master index dataset based on provided parameters
+#' #' 3. Excludes already processed records
+#' #' 4. Prepares the data for parallel processing by splitting it into chunks
+#' #'
+#' #' @param .dir Base directory for the SEC data storage
+#' #' @param .params List of filtering parameters from get_edgar_params()
+#' #' @param .workers Number of parallel workers to use for processing
+#' #'
+#' #' @return Writes a parquet file to the temporary directory containing records to be processed,
+#' #'         with an additional 'Split' column for parallel processing
+#' #'
+#' #' @keywords internal
+#' get_to_be_processed_master_index <- function(.dir, .params, .workers) {
+#'   lp_ <- get_directories(.dir)
+#'
+#'   if (dir.exists(lp_$Temporary$DocumentLinks)) {
+#'     fs::file_delete(lp_$Temporary$DocumentLinks)
+#'   }
+#'
+#'   prc_ <- arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
+#'     dplyr::distinct(HashIndex) %>%
+#'     dplyr::collect() %>%
+#'     dplyr::pull(HashIndex)
+#'
+#'   out_ <- arrow::open_dataset(lp_$MasterIndex$Parquet) %>%
+#'     filter_edgar_data(.params) %>%
+#'     dplyr::filter(!HashIndex %in% prc_) %>%
+#'     dplyr::select(HashIndex, Year, Quarter, YearQuarter, CIK, UrlIndexPage) %>%
+#'     dplyr::arrange(YearQuarter, CIK) %>%
+#'     dplyr::collect() %>%
+#'     dplyr::group_by(YearQuarter) %>%
+#'     dplyr::mutate(
+#'       Split = ceiling(dplyr::row_number() / .workers),
+#'       .before = HashIndex
+#'     )
+#'
+#'
+#'   if (nrow(out_) > 0) {
+#'     arrow::write_dataset(out_, lp_$Temporary$DocumentLinks)
+#'   } else {
+#'     return(invisible(NULL))
+#'   }
+#' }
+#'
+#' #' Download and Save SEC EDGAR Documents
+#' #'
+#' #' @description
+#' #' Downloads and saves SEC EDGAR documents in appropriate formats based on their file extension.
+#' #' Handles text-based documents (htm, xml, xsd, txt) by converting them to parquet,
+#' #' and binary files (pdf, gif, jpg) by saving them directly.
+#' #'
+#' #' @param .doc_row A row with download information
+#' #' @param .user Character string of the user agent
+#' #'
+#' #' @return A Document
+#' #' @keywords internal
+#' help_download_document <- function(.doc_row, .user) {
+#'
+#'   # Create output directory if it doesn't exist
+#'   fs::dir_create(.doc_row$DirOut)
+#'
+#'   # Make HTTP request
+#'   result_ <- make_get_request(.doc_row$UrlDocument, .user)
+#'   if (inherits(result_, "try-error") || !httr::status_code(result_) == 200) {
+#'     return(invisible(NULL))
+#'   }
+#'
+#'   type_ <- ifelse(.doc_row$OutExt == ".parquet", "text", "raw")
+#'   content_ <- parse_content(result_, type_)
+#'
+#'   if (inherits(content_, "try-error")) {
+#'     return(invisible(NULL))
+#'   }
+#'
+#'   if (type_ == "text") {
+#'     tibble::tibble(
+#'       HashDocument = .doc_row$HashDocument,
+#'       Text = content_
+#'     ) %>% arrow::write_parquet(.doc_row$PathOut)
+#'   } else {
+#'     writeBin(content_, .doc_row$PathOut)
+#'   }
+#' }
+#'
+#'
+#' #' Prepare Temporary Document Download Data
+#' #'
+#' #' @description
+#' #' Creates a temporary dataset of documents to be downloaded from SEC EDGAR,
+#' #' organizing them by CIK and document type. The function processes document URLs
+#' #' and prepares file paths for storage.
+#' #'
+#' #' @param .dir Character string specifying the base directory for data storage
+#' #' @param .from Numeric value specifying the start year.quarter (e.g., 2020.1)
+#' #' @param .to Numeric value specifying the end year.quarter
+#' #' @param .ciks Character vector of Central Index Key (CIK) numbers to filter
+#' #' @param .formtypes Character vector of form types to filter (e.g., "10-K", "10-Q")
+#' #' @param .doctypes Character vector of document types to filter
+#' #'
+#' #' @return No return value, called for side effects (writes to temporary Parquet file)
+#' #'
+#' #' @keywords internal
+#' get_temprorary_document_download <- function(.dir, .from, .to, .ciks, .formtypes, .doctypes) {
+#'
+#'   lp_ <- get_directories(.dir)
+#'
+#'   edgar_read_document_links(.dir, .from, .to, .ciks, .formtypes, .doctypes, FALSE) %>%
+#'     dplyr::select(HashDocument, CIK, DocTypeMod, UrlDocument) %>%
+#'     dplyr::collect() %>%
+#'     dplyr::mutate(
+#'       FileExt = tools::file_ext(UrlDocument),
+#'       OutExt = dplyr::case_when(
+#'         FileExt %in% c("html", "htm", "xml", "xsd", "txt") ~ ".parquet",
+#'         FileExt %in% c("gif", "jpg", "pdf") ~ paste0(".", FileExt)
+#'       ),
+#'       DirOut = file.path(lp_$DocumentData, CIK, gsub("\\s", "", DocTypeMod)),
+#'       PathOut = file.path(DirOut, paste0(HashDocument, OutExt))
+#'     ) %>%
+#'     # dplyr::filter(is.na(OutExt)) %>%
+#'     dplyr::filter(!FileExt == "") %>%
+#'     dplyr::filter(!file.exists(PathOut)) %>%
+#'     dplyr::mutate(
+#'       DocNum = dplyr::row_number(),
+#'       Split = ceiling(DocNum / 10)
+#'     ) %>%
+#'     arrow::write_parquet(lp_$Temporary$DocumentData)
+#' }
+#'
 
 
 

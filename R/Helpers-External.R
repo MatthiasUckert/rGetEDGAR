@@ -102,8 +102,6 @@ edgar_read_master_index <- function(.dir, .path = NULL, .from = NULL, .to = NULL
 #'
 #' @export
 edgar_read_document_links <- function(.dir, .path = NULL, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .collect = TRUE) {
-  params_ <- get_edgar_params(.from, .to, .ciks, .formtypes)
-
   if (!is.null(.path)) {
     tab_fils <- dplyr::filter(list_data(.dir), DocumentLinks == .path)
     msg_ <- paste0("DocumentLinks File: '", basename(.path), "' does not exist")
@@ -119,9 +117,10 @@ edgar_read_document_links <- function(.dir, .path = NULL, .from = NULL, .to = NU
     dplyr::collect() %>%
     dplyr::pull()
 
-  arr_ <- arrow::open_dataset(tab_fils$DocumentLinks) %>%
+  arr_ <- arrow::open_dataset(tab_fils$DocumentLinks[!is.na(tab_fils$DocumentLinks)]) %>%
     dplyr::filter(HashIndex %in% idx_) %>%
-    filter_edgar_data(get_edgar_params(.doctypes))
+    filter_edgar_data(.params = get_edgar_params(.doctypes = .doctypes))
+
 
   if (.collect) {
     return(dplyr::collect(arr_))

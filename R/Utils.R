@@ -35,10 +35,13 @@ get_directories <- function(.dir) {
       Parquet = fs::dir_create(file.path(dir_links_, "DocumentLinks")),
       BackUps = fs::dir_create(file.path(dir_links_, "DocumentLinksBackUps"))
     ),
-    DocumentData = fs::dir_create(file.path(dir_, "DocumentData")),
+    DocumentData = list(
+      Original = fs::dir_create(file.path(dir_, "DocumentData", "Original")),
+      Parsed = fs::dir_create(file.path(dir_, "DocumentData", "Parsed"))
+    ),
     Temporary = list(
-      DocumentLinks = file.path(dir_temp_, "TemporaryDocumentLinks.parquet"),
-      DocumentData = file.path(dir_temp_, "TemporaryDocumentData.parquet")
+      DocumentLinks = fs::dir_create(file.path(dir_temp_, "TemporaryDocumentLinks")),
+      DocumentData = fs::dir_create(file.path(dir_temp_, "TemporaryDocumentData"))
     ),
     Logs = list(
       MasterIndex = file.path(dir_log_, "LogMasterIndex.csv"),
@@ -243,18 +246,17 @@ print_verbose <- function(.msg, .verbose, .line = "\n") {
 }
 
 
-list_files <- function(.dirs, .reg = NULL, .id = "doc_id", .rec = FALSE) {
+list_files <- function(.dirs, .reg = NULL, .rec = FALSE) {
   purrr::map(
     .x = .dirs,
     .f = ~ tibble::tibble(path = list.files(.x, .reg, FALSE, TRUE, .rec))
   ) %>%
     dplyr::bind_rows() %>%
     dplyr::mutate(
-      ID = fs::path_ext_remove(basename(path)),
-      path = purrr::set_names(path, !!dplyr::sym(.id))
+      doc_id = fs::path_ext_remove(basename(path)),
+      path = purrr::set_names(path, doc_id)
     ) %>%
-    dplyr::select(ID, path) %>%
-    purrr::set_names(c(.id, "path"))
+    dplyr::select(doc_id, path)
 
 }
 
