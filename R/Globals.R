@@ -1,21 +1,36 @@
 utils::globalVariables(c(
-  # General Variables
-  "Year", "Quarter", "YearQuarter", "CIK", "Type", "Split", "PathOut", "Error", "FormType",
+  # Index and Identification Variables
+  "CIK", "Cik", "HashIndex", "HashDocument", "ID", "DocName", "doc_id",
 
-  # Master Index Variables
-  "UrlMasterIndex", "text", "Filename", "Cik", "UrlFullText",
-  "DateFiled", "UrlIndexPage", "HashIndex",
+  # Date and Period Variables
+  "Year", "Quarter", "YearQuarter",
 
-  # Document Links Variables
-  "HashDocument", "Seq", "Description", "Document", "Size",
-  "UrlDocument",
+  # Document Type and Classification Variables
+  "Type", "FormType", "DocClass", "DocTypeRaw", "DocTypeMod",
 
-  # Status and Processing Variables
-  "AllRow", "AllTot", "AllPer", "Print", "data", "ext",
+  # File and Path Variables
+  "path", "PathOut", "PathZIP", "DirTMP", "DirOut",
+  "FileZIP", "filename", "DocFile", "Ext", "FileExt", "OutExt",
 
   # Document Content Variables
-  "HTML", "TextRaw", "TextMod", "DirOut", "OutExt", "FileExt",
-  "DocTypeMod", "DocNum", "nDocs", "DocClass", "DocTypeRaw",
+  "HTML", "TextRaw", "TextMod",
+  "nWords", "nChars",
 
-  "DocumentLinks", "MasterIndex", "doc_id", "path", "ID", "DocName"
+  # URL Variables
+  "UrlMasterIndex", "UrlFullText", "UrlIndexPage", "UrlDocument",
+
+  # Document Metadata Variables
+  "Seq", "Description", "Document", "Size",
+  "DateFiled",
+
+  # Processing Status Variables
+  "Error", "Split", "Print", "data",
+  "AllRow", "AllTot", "AllPer",
+  "DocNum", "nDocs", "ext",
+
+  # Dataset Type Variables
+  "DocumentLinks", "MasterIndex",
+
+  # Text Processing Variables
+  "text", "Filename"
 ))

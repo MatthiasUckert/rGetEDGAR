@@ -236,28 +236,70 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
 
 
 
-
-edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .verbose = TRUE) {
+#' Download SEC EDGAR Documents
+#'
+#' @description
+#' Downloads actual documents from SEC EDGAR filings and processes their content.
+#' Supports parallel downloading for improved performance.
+#'
+#' @param .dir Character string specifying the directory where the downloaded data will be stored
+#' @param .user Character string specifying the user agent to be used in HTTP requests
+#' @param .from Numeric value specifying the start year.quarter (e.g., 2020.1 for Q1 2020)
+#' @param .to Numeric value specifying the end year.quarter
+#' @param .ciks Character vector of CIK numbers to filter for specific companies
+#' @param .formtypes Character vector of document types to filter (e.g., "10-K", "10-Q")
+#' @param .doctypes Character vector of document types to filter (e.g., "10-K", "10-Q")
+#' @param .workers Integer specifying the number of parallel workers for downloading
+#' @param .verbose Logical indicating whether to print progress messages
+#'
+#' @details
+#' The function:
+#' 1. Reads from the document links database
+#' 2. Downloads documents in parallel using the specified number of workers
+#' 3. Processes HTML content and extracts text
+#' 4. Stores both raw HTML and processed text
+#' 5. Saves results in Parquet format by CIK
+#'
+#' For each document, stores:
+#' - Original HTML
+#' - Raw extracted text
+#' - Modified/cleaned text
+#'
+#' @return No return value, called for side effects
+#'
+#' @examples
+#' \dontrun{
+#' edgar_download_document(
+#'   .dir = "edgar_data",
+#'   .user = "your@email.com",
+#'   .from = 2020.1,
+#'   .to = 2021.4,
+#'   .ciks = c("0000320193"), # Apple Inc
+#'   .formtypes = c("10-K", "10-Q"),
+#'   .workers = 4
+#' )
+#' }
+#'
+#' @export
+edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks = NULL, .formtypes = NULL, .doctypes = NULL, .workers = 1L, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
   prc_ <- fs::path_ext_remove(unlist(purrr::map(
     .x = unname(list_files(lp_$DocumentData$Original)[["path"]]),
     .f = ~ zip::zip_list(.x)[["filename"]]
   )))
 
-  tab_fils_ <- dplyr::filter(list_data(.dir), !is.na(DocumentLinks)) %>%
-    dplyr::slice(1:30)
+  tab_fils_ <- dplyr::filter(list_data(.dir), !is.na(DocumentLinks))
 
   time_ <- format(Sys.time(), format = "%Y-%m-%d-%H-%M-%S")
   dir_tmp_ <- file.path(lp_$Temporary$DocumentData, time_)
 
-  i <- 28
   for (i in seq_len(nrow(tab_fils_))) {
     name_yq_ <- tab_fils_$YearQuarter[i]
     path_yq_ <- tab_fils_$DocumentLinks[i]
     dir_yq_ <- fs::dir_create(paste0(dir_tmp_, "_", name_yq_))
     zip_yq_ <- file.path(lp_$DocumentData$Original, paste0(basename(dir_yq_), ".zip"))
 
-    print_verbose(paste0(name_yq_, ": Checking Documents"), .verbose, .line = "\r")
+    print_verbose(paste0(name_yq_, ": Checking Documents ..."), .verbose, .line = "\r")
     use_all_ <- edgar_read_document_links(
       .dir, path_yq_, .from, .to, .ciks, .formtypes, .doctypes, FALSE
     ) %>%
@@ -274,6 +316,7 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
       dplyr::mutate(Split = ceiling(dplyr::row_number() / 10))
 
     if (nrow(use_all_) == 0) {
+      fs::dir_delete(dir_yq_)
       next
     }
 
@@ -282,6 +325,7 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
 
     future::plan("multisession", workers = 10L)
     t0_start_ <- Sys.time() # Overall start time for ETA
+    print_verbose("", .verbose, "\n")
     for (j in seq_along(lst_url_)) {
       t0_loop_ <- Sys.time()
       furrr::future_walk2(
@@ -295,7 +339,7 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
       diff_total_ <- as.numeric(difftime(Sys.time(), t0_start_, units = "secs"))
       Sys.sleep(max(1.05 - diff_loop_, 0))
       msg_time_ <- format_time(t0_start_, j * 10, length(lst_url_) * 10)
-      msg_rate_ <- paste0(" | Rate: ", format_number((j * 10) / diff_total_, .01), " Req/Sec")
+      msg_rate_ <- paste0(" | Rate: ", round((j * 10) / diff_total_, 2), " Req/Sec")
       msg_loop_ <- paste0(format_number(j * 10), "/", format_number(length(lst_url_) * 10))
       msg_total_ <- paste0(tab_fils_$YearQuarter[i], ": ", msg_loop_, " | ", msg_time_, msg_rate_)
       print_verbose(msg_total_, .verbose, .line = "\r")
@@ -309,10 +353,44 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
     )
     fs::dir_delete(dir_yq_)
   }
-
-
-
 }
+
+#' Download SEC EDGAR Documents
+#'
+#' @description
+#' Downloads actual documents from SEC EDGAR filings and processes their content.
+#' Supports parallel downloading for improved performance.
+#'
+#' @param .dir Character string specifying the directory where the downloaded data will be stored
+#' @param .workers Integer specifying the number of parallel workers for downloading
+#' @param .verbose Logical indicating whether to print progress messages
+#'
+#' @return No return value, called for side effects
+#'
+#' @examples
+#' @export
+edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
+  lp_ <- get_directories(.dir)
+
+  fil_tobe_parsed_ <- help_get_parse_files(.dir, .verbose)
+  cik_tobe_parsed_ <- suppressWarnings(arrow::open_dataset(fil_tobe_parsed_) %>%
+    dplyr::distinct(CIK) %>%
+    dplyr::collect() %>%
+    dplyr::pull())
+
+
+
+  print_verbose("Parsing Documents ...", .verbose, .line = "\n\n")
+  future::plan("multisession", workers = .workers)
+  furrr::future_walk(
+    .x = cik_tobe_parsed_,
+    .f = ~ help_parse_files(fil_tobe_parsed_, .x),
+    .options = furrr::furrr_options(seed = TRUE),
+    .progress = .verbose
+  )
+  future::plan("default")
+}
+
 
 
 # DeBug ---------------------------------------------------------------------------------------
@@ -345,16 +423,6 @@ if (FALSE) {
     .verbose = TRUE
   )
 
-  tab_master <- edgar_read_master_index(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .from = NULL,
-    .to = NULL,
-    .ciks = NULL,
-    .formtypes = forms,
-    .collect = TRUE
-  )
-
-
   # Document Links
   edgar_get_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
@@ -367,6 +435,41 @@ if (FALSE) {
     .verbose = TRUE
   )
 
+  edgar_download_document(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .user = user,
+    .from = NULL,
+    .to = NULL,
+    .ciks = NULL,
+    .formtypes = forms,
+    .doctypes = c("Exhibit 10"),
+    .workers = 5L,
+    .verbose = TRUE
+  )
+
+  edgar_parse_documents(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .from = NULL,
+    .to = NULL,
+    .ciks = NULL,
+    .formtypes = forms,
+    .doctypes = c("Exhibit 10"),
+    .workers = 5L,
+    .verbose = TRUE
+  )
+
+
+
+
+  tab_master <- edgar_read_master_index(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .from = NULL,
+    .to = NULL,
+    .ciks = NULL,
+    .formtypes = forms,
+    .collect = TRUE
+  )
+
   tab_docs <- edgar_read_document_links(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .from = NULL,
@@ -375,18 +478,6 @@ if (FALSE) {
     .formtypes = forms,
     .doctypes = NULL,
     .collect = TRUE
-  )
-
-
-  edgar_download_document(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = user,
-    .from = 1995.1,
-    .to = 2024.4,
-    .ciks = NULL,
-    .formtypes = forms,
-    .doctypes = c("Exhibit 10"),
-    .verbose = TRUE
   )
 }
 

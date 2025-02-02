@@ -1,5 +1,3 @@
-
-
 if (FALSE) {
   .msg <- "Test Message"
   .verbose <- TRUE
@@ -79,11 +77,11 @@ get_edgar_params <- function(.from = NULL, .to = NULL, .ciks = NULL, .formtypes 
 }
 
 if (FALSE) {
-  .from = 1995.1
-  .to = 2024.4
-  .ciks = NULL
-  .formtypes = NULL
-  .doctypes = c("Exhibit 10", "10-K", "10-Q", "20-F", "8-K")
+  .from <- 1995.1
+  .to <- 2024.4
+  .ciks <- NULL
+  .formtypes <- NULL
+  .doctypes <- c("Exhibit 10", "10-K", "10-Q", "20-F", "8-K")
 }
 
 
@@ -173,7 +171,6 @@ parse_content <- function(.result, .type = c("text", "raw")) {
   } else {
     try(httr::content(.result, "raw"), silent = TRUE)
   }
-
 }
 
 # Get Master Index ----------------------------------------------------------------------------
@@ -442,8 +439,7 @@ write_link_data <- function(
     .dir, .tab = NULL,
     .source = c("DocumentLinks", "LandingPage"),
     .target = c("sqlite", "parquet"),
-    .verbose = FALSE
-    ) {
+    .verbose = FALSE) {
   # Get directory paths
   lp_ <- get_directories(.dir)
 
@@ -473,7 +469,6 @@ write_link_data <- function(
   if (.target == "sqlite") {
     DBI::dbWriteTable(con_, params_$table_name, .tab, append = TRUE)
   } else {
-
     query_dis_ <- paste("SELECT DISTINCT YearQuarter FROM", table_)
     yq_ <- sort(dplyr::pull(DBI::dbGetQuery(con_, query_dis_), YearQuarter))
 
@@ -481,7 +476,7 @@ write_link_data <- function(
       use_yq_ <- yq_[i]
       nam_yq_ <- paste0(.source, "_", gsub("\\.", "-", use_yq_), ".parquet")
       fil_yq_ <- file.path(params_$DirParquet, nam_yq_)
-      msg_yq_ <- paste0("Saving Data: ", .source, ": " , use_yq_)
+      msg_yq_ <- paste0("Saving Data: ", .source, ": ", use_yq_)
       print_verbose(msg_yq_, .verbose, .line = "\r")
 
       dplyr::tbl(con_, params_$table_name) %>%
@@ -508,7 +503,6 @@ write_link_data <- function(
 #'               "DocumentLinks" or "LandingPage"
 #' @keywords internal
 backup_link_data <- function(.dir, .source = c("DocumentLinks", "LandingPage")) {
-
   # Get directory paths
   lp_ <- get_directories(.dir)
 
@@ -721,6 +715,200 @@ help_download_url_request <- function(.url, .user, .path_out) {
     try(writeBin(content_, .path_out), silent = TRUE)
   }
 }
+
+
+
+# Parse Documents -----------------------------------------------------------------------------
+
+#' Get Files to be Parsed from SEC EDGAR Documents
+#'
+#' @description
+#' Internal helper function that identifies which SEC EDGAR documents need to be parsed
+#' by comparing existing processed files against downloaded raw documents.
+#'
+#' @param .dir Character string specifying the base directory containing SEC EDGAR data
+#' @param .verbose Logical indicating whether to print progress messages (default: TRUE)
+#'
+#' @details
+#' The function performs the following steps:
+#' 1. Checks already processed documents in the parsed directory
+#' 2. Lists all downloaded ZIP files containing raw documents
+#' 3. Filters for supported file extensions (txt, htm, html, xml, xsd)
+#' 4. Joins with document links data to get metadata
+#' 5. Creates a temporary Parquet file with files to be processed
+#'
+#' @return Character string containing the path to a Parquet file with information about
+#' files that need to be parsed. The Parquet file contains columns:
+#' - FileZIP: Original ZIP file path
+#' - DocFile: Document filename
+#' - Ext: File extension
+#' - DocName: Unique document identifier
+#' - YearQuarter: Filing period
+#' - HashIndex: Filing index hash
+#' - HashDocument: Document hash
+#' - CIK: Central Index Key
+#' - Year: Filing year
+#' - Quarter: Filing quarter
+#' - DocTypeRaw: Original document type
+#' - PathZIP: Path to ZIP file
+#' - DirTMP: Temporary directory for extraction
+#' - PathOut: Output path for parsed data
+#'
+#' @note
+#' This is an internal helper function called by `edgar_parse_documents()`.
+#' Not meant to be called directly by users.
+#'
+#' @keywords internal
+help_get_parse_files <- function(.dir, .verbose = TRUE) {
+  print_verbose("Retrieving to be Processed Documents", .verbose)
+  lp_ <- get_directories(.dir)
+  if (!nrow(arrow::open_dataset(lp_$DocumentData$Parsed)) == 0) {
+    fil_prc_ <- arrow::open_dataset(lp_$DocumentData$Parsed) %>%
+      dplyr::mutate(DocName = paste0(CIK, "-", HashDocument)) %>%
+      dplyr::distinct(DocName) %>%
+      dplyr::collect() %>%
+      dplyr::pull()
+  } else {
+    fil_prc_ <- NA_character_
+  }
+
+  fil_zip_ <- purrr::map(
+    .x = list_files(lp_$DocumentData$Original)[["path"]],
+    .f = ~ tibble::as_tibble(zip::zip_list(.x))
+  ) %>%
+    dplyr::bind_rows(.id = "FileZIP") %>%
+    dplyr::select(FileZIP, DocFile = filename) %>%
+    dplyr::mutate(
+      Ext = tools::file_ext(DocFile),
+      DocName = fs::path_ext_remove(DocFile),
+      YearQuarter = stringi::stri_sub(FileZIP, 21, 26)
+    ) %>%
+    dplyr::mutate(Ext %in% c("txt", "htm", "html", "xml", "xsd")) %>%
+    dplyr::inner_join(
+      y = list_files(lp_$DocumentLinks$Parquet) %>%
+        dplyr::mutate(YearQuarter = stringi::stri_sub(doc_id, 15, 20)) %>%
+        dplyr::select(YearQuarter, PathLinks = path),
+      by = "YearQuarter"
+    ) %>%
+    dplyr::inner_join(
+      y = list_files(lp_$DocumentData$Original) %>%
+        dplyr::select(FileZIP = doc_id, PathZIP = path),
+      by = "FileZIP"
+    ) %>%
+    dplyr::mutate(YearQuarter = as.numeric(gsub("-", ".", YearQuarter)))
+
+  fil_out_ <- file.path(lp_$Temporary$DocumentParsing, "ToBeProcessedFiles.parquet")
+  purrr::map(
+    .x = split(fil_zip_, fil_zip_$YearQuarter),
+    .f = ~ arrow::open_dataset(.x$PathLinks[1]) %>%
+      dplyr::filter(Error == 0) %>%
+      dplyr::select(HashIndex, HashDocument, CIK, Year, Quarter, DocTypeRaw = Type) %>%
+      dplyr::mutate(DocName = paste0(CIK, "-", HashDocument)) %>%
+      dplyr::collect() %>%
+      dplyr::left_join(get("Table_DocTypesRaw"), by = "DocTypeRaw") %>%
+      dplyr::inner_join(.x, by = "DocName")
+  ) %>%
+    dplyr::bind_rows() %>%
+    dplyr::mutate(
+      DirTMP = file.path(lp_$Temporary$DocumentParsing, CIK),
+      PathOut = file.path(lp_$DocumentData$Parsed, paste0(CIK, ".pqrquet"))
+    ) %>%
+    arrow::write_parquet(fil_out_)
+
+  return(fil_out_)
+}
+
+#' Parse SEC EDGAR Documents for a Single CIK
+#'
+#' @description
+#' Internal helper function that processes raw SEC EDGAR documents for a specific CIK
+#' (Central Index Key) by extracting text content and computing document statistics.
+#'
+#' @param .path_tobe Character string specifying the path to the Parquet file containing
+#' information about files to be processed (output from help_get_parse_files)
+#' @param .cik Character string specifying the CIK to process
+#'
+#' @details
+#' The function performs the following steps:
+#' 1. Filters the to-be-processed files for the specified CIK
+#' 2. Extracts relevant documents from ZIP archives to temporary directories
+#' 3. Reads and processes the HTML content
+#' 4. Extracts and standardizes text
+#' 5. Computes document statistics (word count, character count)
+#' 6. Saves processed data in Parquet format
+#'
+#' For each document, the function extracts and stores:
+#' - Original HTML content
+#' - Raw extracted text
+#' - Modified/standardized text
+#' - Word count
+#' - Character count
+#' - Document metadata (type, class, filing information)
+#'
+#' @return No return value, called for side effects (writes processed data to Parquet files)
+#'
+#' @note
+#' This is an internal helper function called by `edgar_parse_documents()` using parallel
+#' processing. Not meant to be called directly by users.
+#'
+#' @seealso
+#' help_get_parse_files, edgar_parse_documents
+#'
+#' @keywords internal
+help_parse_files <- function(.path_tobe, .cik) {
+  use_all_ <- suppressWarnings(arrow::open_dataset(.path_tobe) %>%
+    dplyr::filter(CIK == .cik) %>%
+    dplyr::collect())
+
+  use_zip_ <- use_all_ %>%
+    dplyr::group_by(PathZIP, DirTMP) %>%
+    dplyr::summarise(DocFiles = list(DocFile), .groups = "drop")
+
+  for (i in seq_len(nrow(use_zip_))) {
+    zip::unzip(
+      zipfile = use_zip_$PathZIP[i],
+      files = use_zip_$DocFiles[[i]],
+      exdir = fs::dir_create(use_zip_$DirTMP[i]),
+      overwrite = TRUE
+    )
+  }
+  fil_cik_ <- list_files(use_zip_$DirTMP[1])
+
+  tab_ <- purrr::map(
+    .x = fil_cik_$path,
+    .f = ~ tibble::tibble(HTML = readChar(.x, file.info(.x)$size))
+  ) %>%
+    dplyr::bind_rows(.id = "DocName") %>%
+    dplyr::mutate(
+      TextRaw = purrr::map_chr(HTML, read_html),
+      TextMod = standardize_text(TextRaw),
+      nWords = stringi::stri_count_words(TextMod),
+      nChars = nchar(TextMod)
+    ) %>%
+    dplyr::left_join(
+      y = use_all_ %>%
+        dplyr::select(
+          DocName, CIK, HashIndex, HashDocument, Year, Quarter, DocClass, DocTypeRaw, DocTypeMod
+        ),
+      by = "DocName"
+    ) %>%
+    dplyr::select(
+      CIK, HashIndex, HashDocument, Year, Quarter, DocClass, DocTypeRaw, DocTypeMod,
+      HTML, TextRaw, TextMod, nWords, nChars
+    )
+
+  if (file.exists(use_all_$PathOut[1])) {
+    arrow::read_parquet(use_all_$PathOut[1], mmap = FALSE) %>%
+      dplyr::bind_rows(tab_) %>%
+      dplyr::distinct(CIK, HashIndex, HashDocument, .keep_all = TRUE) %>%
+      arrow::write_parquet(use_all_$PathOut[1])
+  } else {
+    tab_ %>%
+      dplyr::distinct(CIK, HashIndex, HashDocument, .keep_all = TRUE) %>%
+      arrow::write_parquet(use_all_$PathOut[1])
+  }
+}
+
 
 
 

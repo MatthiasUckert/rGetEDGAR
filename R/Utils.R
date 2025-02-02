@@ -1,55 +1,4 @@
 # Utils ---------------------------------------------------------------------------------------
-#' Set Up Directory Structure
-#'
-#' @description
-#' Creates and returns the directory structure for storing EDGAR data.
-#'
-#' @param .dir Character string specifying the base directory
-#'
-#' @return A list containing paths for MasterIndex, DocumentLinks, and DocumentData
-#'
-#' @keywords internal
-get_directories <- function(.dir) {
-  dir_ <- fs::dir_create(.dir)
-  dir_master_ <- fs::dir_create(file.path(dir_, "MasterIndex"))
-  dir_landing_ <- fs::dir_create(file.path(dir_, "LandingPage"))
-  dir_links_ <- fs::dir_create(file.path(dir_, "DocumentLinks"))
-  dir_temp_ <- fs::dir_create(file.path(dir_, "Temporary"))
-  dir_log_ <- fs::dir_create(file.path(dir_, "Logs"))
-
-  list(
-    MasterIndex = list(
-      Sqlite = file.path(dir_master_, "MasterIndex.sqlite"),
-      # Parquet = file.path(dir_master_, "MasterIndex.parquet")
-      Parquet = fs::dir_create(file.path(dir_master_, "MasterIndex"))
-    ),
-    LandingPage = list(
-      Sqlite = file.path(dir_landing_, "LandingPage.sqlite"),
-      # Parquet = file.path(dir_landing_, "LandingPage.parquet"),
-      Parquet = fs::dir_create(file.path(dir_landing_, "LandingPage")),
-      BackUps = fs::dir_create(file.path(dir_landing_, "LandingPageBackUps"))
-    ),
-    DocumentLinks = list(
-      Sqlite = file.path(dir_links_, "DocumentLinks.sqlite"),
-      # Parquet = file.path(dir_links_, "DocumentLinks.parquet"),
-      Parquet = fs::dir_create(file.path(dir_links_, "DocumentLinks")),
-      BackUps = fs::dir_create(file.path(dir_links_, "DocumentLinksBackUps"))
-    ),
-    DocumentData = list(
-      Original = fs::dir_create(file.path(dir_, "DocumentData", "Original")),
-      Parsed = fs::dir_create(file.path(dir_, "DocumentData", "Parsed"))
-    ),
-    Temporary = list(
-      DocumentLinks = fs::dir_create(file.path(dir_temp_, "TemporaryDocumentLinks")),
-      DocumentData = fs::dir_create(file.path(dir_temp_, "TemporaryDocumentData"))
-    ),
-    Logs = list(
-      MasterIndex = file.path(dir_log_, "LogMasterIndex.csv"),
-      DocumentLinks = file.path(dir_log_, "LogDocumentLinks.csv"),
-      DocumentData = file.path(dir_log_, "LogDocumentData.csv")
-    )
-  )
-}
 
 #' Generate Year-Quarter Combinations
 #'
@@ -245,7 +194,34 @@ print_verbose <- function(.msg, .verbose, .line = "\n") {
   }
 }
 
-
+#' List Files in Directory with Optional Pattern Matching
+#'
+#' @description
+#' Creates a tibble of files from specified directories with optional pattern matching
+#' and recursive searching capabilities.
+#'
+#' @param .dirs Character vector of directory paths to search
+#' @param .reg Character string containing a regular expression pattern for file filtering (default: NULL)
+#' @param .rec Logical indicating whether to search recursively in subdirectories (default: FALSE)
+#'
+#' @details
+#' The function performs the following steps:
+#' 1. Lists files in each specified directory
+#' 2. Creates a document ID from the filename (without extension)
+#' 3. Returns paths and IDs in a standardized tibble format
+#'
+#' @return A tibble with columns:
+#' \itemize{
+#'   \item doc_id: Document identifier (filename without extension)
+#'   \item path: Full file path, named with doc_id
+#' }
+#'
+#' @note
+#' This is an internal utility function used by other package functions to
+#' standardize file listing and identification across the package.
+#'
+#' @keywords internal
+#' @seealso list_data
 list_files <- function(.dirs, .reg = NULL, .rec = FALSE) {
   purrr::map(
     .x = .dirs,
@@ -260,6 +236,35 @@ list_files <- function(.dirs, .reg = NULL, .rec = FALSE) {
 
 }
 
+#' List EDGAR Data Files by Type and Year-Quarter
+#'
+#' @description
+#' Creates a consolidated view of available EDGAR data files across different
+#' data types (MasterIndex, DocumentLinks, LandingPage) organized by year-quarter.
+#'
+#' @param .dir Character string specifying the base directory containing SEC EDGAR data
+#'
+#' @details
+#' The function:
+#' 1. Gets directory structure using get_directories()
+#' 2. Lists files from MasterIndex, DocumentLinks, and LandingPage Parquet directories
+#' 3. Parses filenames to extract type and year-quarter information
+#' 4. Pivots data to create a wide-format table
+#'
+#' @return A tibble with columns:
+#' \itemize{
+#'   \item YearQuarter: Filing period identifier (e.g., "2020.1")
+#'   \item MasterIndex: Path to master index file (if available)
+#'   \item DocumentLinks: Path to document links file (if available)
+#'   \item LandingPage: Path to landing page file (if available)
+#' }
+#'
+#' @note
+#' Used internally to track and manage different types of EDGAR data files
+#' across time periods.
+#'
+#' @keywords internal
+#' @seealso get_directories, list_files
 list_data <- function(.dir) {
   lp_ <- get_directories(.dir)
   list_files(
@@ -269,8 +274,17 @@ list_data <- function(.dir) {
     tidyr::pivot_wider(names_from = Type, values_from = path)
 }
 
-utils_showHtml <- function(.html) {
-  tmp_ <- tempfile(fileext = ".html")
-  write(.html, tmp_)
-  utils::browseURL(tmp_)
+
+
+
+if (FALSE) {
+  # Example usage:
+  # Basic usage with defaults
+  text <- standardize_text("Your text here")
+  # Custom options
+  opts <- standardize_options(.rm_num = TRUE, .to_upper = FALSE)
+  text <- standardize_text("Your text here", .options = opts)
 }
+
+
+
