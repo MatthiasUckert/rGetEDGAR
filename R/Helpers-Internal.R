@@ -783,7 +783,7 @@ help_get_parse_files <- function(.dir, .verbose = TRUE) {
       DocName = fs::path_ext_remove(DocFile),
       YearQuarter = stringi::stri_sub(FileZIP, 21, 26)
     ) %>%
-    dplyr::mutate(Ext %in% c("txt", "htm", "html", "xml", "xsd")) %>%
+    dplyr::filter(Ext %in% c("txt", "htm", "html", "xml", "xsd")) %>%
     dplyr::inner_join(
       y = list_files(lp_$DocumentLinks$Parquet) %>%
         dplyr::mutate(YearQuarter = stringi::stri_sub(doc_id, 15, 20)) %>%
@@ -792,7 +792,8 @@ help_get_parse_files <- function(.dir, .verbose = TRUE) {
     ) %>%
     dplyr::inner_join(
       y = list_files(lp_$DocumentData$Original) %>%
-        dplyr::select(FileZIP = doc_id, PathZIP = path),
+        dplyr::select(FileZIP = doc_id, PathZIP = path) %>%
+        dplyr::mutate(PathZIP = unname(PathZIP)),
       by = "FileZIP"
     ) %>%
     dplyr::mutate(YearQuarter = as.numeric(gsub("-", ".", YearQuarter)))
@@ -813,6 +814,8 @@ help_get_parse_files <- function(.dir, .verbose = TRUE) {
       DirTMP = file.path(lp_$Temporary$DocumentParsing, CIK),
       PathOut = file.path(lp_$DocumentData$Parsed, paste0(CIK, ".pqrquet"))
     ) %>%
+    dplyr::mutate(dplyr::across(dplyr::everything(), unname)) %>%
+    arrow::as_arrow_table() %>%
     arrow::write_parquet(fil_out_)
 
   return(fil_out_)
@@ -872,7 +875,9 @@ help_parse_files <- function(.path_tobe, .cik) {
       overwrite = TRUE
     )
   }
-  fil_cik_ <- list_files(use_zip_$DirTMP[1])
+  fil_cik_ <- list_files(use_zip_$DirTMP[1]) %>%
+    dplyr::mutate(Ext = tools::file_ext(path)) %>%
+    dplyr::filter(Ext %in% c("txt", "htm", "html", "xml", "xsd"))
 
   tab_ <- purrr::map(
     .x = fil_cik_$path,

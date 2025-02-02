@@ -367,20 +367,20 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
 #'
 #' @return No return value, called for side effects
 #'
-#' @examples
 #' @export
 edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
 
   fil_tobe_parsed_ <- help_get_parse_files(.dir, .verbose)
-  cik_tobe_parsed_ <- suppressWarnings(arrow::open_dataset(fil_tobe_parsed_) %>%
-    dplyr::distinct(CIK) %>%
-    dplyr::collect() %>%
-    dplyr::pull())
+  arr_tobe_parsed_ <- arrow::open_dataset(fil_tobe_parsed_)
+  cik_tobe_parsed_ <- dplyr::collect(dplyr::distinct(arr_tobe_parsed_, CIK))[["CIK"]]
+  nrows_ <- format_number(nrow(arr_tobe_parsed_))
+  nciks_ <- format_number(length(cik_tobe_parsed_))
+  rm(arr_tobe_parsed_)
 
 
-
-  print_verbose("Parsing Documents ...", .verbose, .line = "\n\n")
+  msg_ <- paste0("Parsing Documents: ", nrows_, " Documents (", nciks_, " CIKs)")
+  print_verbose(msg_, .verbose, .line = "\n\n")
   future::plan("multisession", workers = .workers)
   furrr::future_walk(
     .x = cik_tobe_parsed_,
@@ -391,10 +391,9 @@ edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
   future::plan("default")
 }
 
-
-
 # DeBug ---------------------------------------------------------------------------------------
 if (FALSE) {
+  "19,969"
   devtools::load_all(".")
   library(rGetEDGAR)
   forms <- c(
@@ -449,11 +448,6 @@ if (FALSE) {
 
   edgar_parse_documents(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .from = NULL,
-    .to = NULL,
-    .ciks = NULL,
-    .formtypes = forms,
-    .doctypes = c("Exhibit 10"),
     .workers = 5L,
     .verbose = TRUE
   )
