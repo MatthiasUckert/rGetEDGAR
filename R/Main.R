@@ -448,7 +448,7 @@ if (FALSE) {
 
   edgar_parse_documents(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .workers = 5L,
+    .workers = 2L,
     .verbose = TRUE
   )
 

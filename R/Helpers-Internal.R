@@ -783,6 +783,7 @@ help_get_parse_files <- function(.dir, .verbose = TRUE) {
       DocName = fs::path_ext_remove(DocFile),
       YearQuarter = stringi::stri_sub(FileZIP, 21, 26)
     ) %>%
+    dplyr::filter(!DocName %in% fil_prc_) %>%
     dplyr::filter(Ext %in% c("txt", "htm", "html", "xml", "xsd")) %>%
     dplyr::inner_join(
       y = list_files(lp_$DocumentLinks$Parquet) %>%
