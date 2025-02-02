@@ -869,6 +869,7 @@ help_parse_files <- function(.path_tobe, .cik) {
     dplyr::summarise(DocFiles = list(DocFile), .groups = "drop")
 
   for (i in seq_len(nrow(use_zip_))) {
+    fs::dir_delete(use_zip_$DirTMP[1])
     zip::unzip(
       zipfile = use_zip_$PathZIP[i],
       files = use_zip_$DocFiles[[i]],
@@ -913,6 +914,8 @@ help_parse_files <- function(.path_tobe, .cik) {
       dplyr::distinct(CIK, HashIndex, HashDocument, .keep_all = TRUE) %>%
       arrow::write_parquet(use_all_$PathOut[1])
   }
+
+  fs::dir_delete(use_zip_$DirTMP[1])
 }
 
 

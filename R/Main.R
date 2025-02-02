@@ -446,11 +446,15 @@ if (FALSE) {
     .verbose = TRUE
   )
 
-  edgar_parse_documents(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .workers = 2L,
-    .verbose = TRUE
-  )
+  for (i in 1:100) {
+    edgar_parse_documents(
+      .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+      .workers = 2L,
+      .verbose = TRUE
+    )
+    Sys.sleep(60 * 60)
+  }
+
 
 
 
