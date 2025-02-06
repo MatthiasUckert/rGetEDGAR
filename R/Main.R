@@ -180,7 +180,9 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       .params = get_edgar_params(.from, .to, .ciks, .formtypes),
       .workers = .workers
     )
-    if (nrow(use_) == 0) next
+    if (nrow(use_) == 0) {
+      next
+    }
 
     print_verbose("", .verbose, "\n")
     for (j in seq_len(nrow(use_))) {
@@ -320,6 +322,9 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
       next
     }
 
+    # print("Waiting...")
+    # Sys.sleep(1000)
+
     lst_url_ <- split(use_all_$UrlDocument, use_all_$Split)
     lst_out_ <- split(use_all_$PathTMP, use_all_$Split)
 
@@ -355,6 +360,7 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
   }
 }
 
+
 #' Download SEC EDGAR Documents
 #'
 #' @description
@@ -369,27 +375,222 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
 #'
 #' @export
 edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
-  lp_ <- get_directories(.dir)
 
-  fil_tobe_parsed_ <- help_get_parse_files(.dir, .verbose)
-  arr_tobe_parsed_ <- arrow::open_dataset(fil_tobe_parsed_)
-  cik_tobe_parsed_ <- dplyr::collect(dplyr::distinct(arr_tobe_parsed_, CIK))[["CIK"]]
-  nrows_ <- format_number(nrow(arr_tobe_parsed_))
-  nciks_ <- format_number(length(cik_tobe_parsed_))
-  rm(arr_tobe_parsed_)
+  yq_ <- gsub("\\.", "-", get_year_qtr_table()[["YearQuarter"]])
 
-
-  msg_ <- paste0("Parsing Documents: ", nrows_, " Documents (", nciks_, " CIKs)")
-  print_verbose(msg_, .verbose, .line = "\n\n")
   future::plan("multisession", workers = .workers)
-  furrr::future_walk(
-    .x = cik_tobe_parsed_,
-    .f = ~ help_parse_files(fil_tobe_parsed_, .x),
-    .options = furrr::furrr_options(seed = TRUE),
-    .progress = .verbose
-  )
+  for (i in seq_len(length(yq_))) {
+    lst_use_ <- get_non_processed_files(.dir, yq_[i])
+
+    len_ <- length(lst_use_)
+    msg_ <- paste0("Processing YearQuarter: ", yq_[i], " (", format_number(len_), " Docs)")
+    print_verbose(msg_, .verbose, .line = "\r")
+    if (len_ == 0) {
+      next
+    }
+
+    if (.verbose) cat("\n")
+    furrr::future_walk(
+      .x = lst_use_,
+      .f = parse_files,
+      .options = furrr::furrr_options(seed = TRUE, scheduling = Inf)
+    )
+  }
   future::plan("default")
 }
+
+#' Get Non-Processed SEC EDGAR Files
+#'
+#' @description
+#' Identifies and filters SEC EDGAR documents that haven't been processed yet for a specific year-quarter.
+#' Focuses on Exhibit 10 documents and handles file paths for processing.
+#'
+#' @param .dir Character string specifying the base directory for SEC data
+#' @param .yq Character string specifying the year-quarter in format "YYYY-QQ"
+#'
+#' @return List of tibbles containing file information for unprocessed documents:
+#'   \itemize{
+#'     \item HashIndex: Unique identifier for the filing
+#'     \item CIK: Company identifier
+#'     \item HashDocument: Document hash
+#'     \item DocName: Document name
+#'     \item FileName: Original file name
+#'     \item PathZIP: Path to source ZIP file
+#'     \item PathTmp: Temporary extraction path
+#'     \item PathOut: Output path for processed file
+#'   }
+#'
+#' @keywords internal
+get_non_processed_files <- function(.dir, .yq) {
+  lp_ <- get_directories(.dir)
+
+  paths_zips_ <-  list_files(lp_$DocumentData$Original) %>%
+    dplyr::mutate(YearQuarter = stringi::stri_sub(doc_id, 21, 26)) %>%
+    dplyr::filter(YearQuarter == .yq)
+
+  if (nrow(paths_zips_) == 0) {
+    return(list())
+  }
+
+  paths_link_ <- list_files(lp_$DocumentLinks$Parquet) %>%
+    dplyr::filter(endsWith(doc_id, .yq))
+
+  dir_docs_ <- dplyr::filter(list_files(lp_$DocumentData$Parsed), doc_id == .yq)
+  fil_prcs_ <- list_files(dir_docs_, .rec = TRUE)[["doc_id"]]
+
+  fil_zip_ <- purrr::map(
+    .x = paths_zips_$path,
+    .f = ~ dplyr::mutate(tibble::as_tibble(zip::zip_list(.x)), PathZIP = .x)
+  ) %>%
+    dplyr::bind_rows(.id = "FileZIP") %>%
+    dplyr::mutate(
+      DocName = fs::path_ext_remove(filename),
+      FileExt = tolower(tools::file_ext(filename)),
+      CIK = stringi::stri_sub(DocName, 1, 10),
+      HashDocument = stringi::stri_sub(DocName, 12, 43),
+    ) %>%
+    dplyr::filter(!DocName %in% fil_prcs_) %>%
+    dplyr::filter(FileExt %in% c("txt", "htm", "html", "xml", "xsd")) %>%
+    dplyr::left_join(
+      y = arrow::open_dataset(paths_link_$path) %>%
+        dplyr::select(CIK, HashIndex, HashDocument, DocTypeRaw = Type) %>%
+        dplyr::collect(),
+      by = dplyr::join_by(CIK, HashDocument)
+    ) %>%
+    dplyr::left_join(
+      y = dplyr::select(get("Table_DocTypesRaw"), DocTypeRaw, DocTypeMod),
+      by = dplyr::join_by(DocTypeRaw)
+    ) %>%
+    dplyr::filter(DocTypeMod == "Exhibit 10") %>%
+    dplyr::mutate(
+      DocTypeMod = gsub(" ", "", DocTypeMod),
+      DocTypeMod = gsub("\\/|\\.", "-", DocTypeMod),
+      PathOut = file.path(lp_$DocumentData$Parsed, .yq, gsub(" ", "", DocTypeMod), paste0(DocName, ".parquet")),
+      PathTmp = file.path(lp_$Temporary$DocumentData, filename),
+    ) %>%
+    dplyr::select(
+      HashIndex, CIK, HashDocument, DocName,
+      FileName = filename, PathZIP, PathTmp, PathOut
+    )
+
+  if (nrow(fil_zip_) == 0) {
+    return(list())
+  }
+
+  split(fil_zip_, fil_zip_$DocName)
+}
+
+#' Parse SEC EDGAR Files
+#'
+#' @description
+#' Processes individual SEC EDGAR documents by extracting from ZIP archives,
+#' reading HTML content, standardizing text, and saving as parquet files.
+#'
+#' @param .tab_row Tibble row containing file information:
+#'   \itemize{
+#'     \item CIK: Company identifier
+#'     \item HashIndex: Filing identifier
+#'     \item HashDocument: Document hash
+#'     \item PathZIP: Source ZIP path
+#'     \item FileName: File to extract
+#'     \item PathTmp: Temporary path
+#'     \item PathOut: Output path
+#'   }
+#'
+#' @return No return value, called for side effects:
+#'   \itemize{
+#'     \item Extracts document from ZIP
+#'     \item Processes HTML content
+#'     \item Saves standardized text as parquet
+#'     \item Cleans up temporary files
+#'   }
+#' @keywords internal
+parse_files <- function(.tab_row) {
+  if (file.exists(.tab_row$PathOut)) {
+    return(tibble::tibble())
+  }
+  fs::dir_create(dirname(.tab_row$PathOut))
+  zip::unzip(
+    zipfile = .tab_row$PathZIP,
+    files = .tab_row$FileName,
+    exdir = dirname(.tab_row$PathTmp),
+    overwrite = TRUE
+  )
+
+  tibble::tibble(
+    CIK = .tab_row$CIK,
+    HashIndex = .tab_row$HashIndex,
+    HashDocument = .tab_row$HashDocument,
+    HTML = readChar(.tab_row$PathTmp, file.info(.tab_row$PathTmp)$size)
+  ) %>%
+    dplyr::mutate(
+      TextRaw = purrr::map_chr(HTML, read_html),
+      TextMod = standardize_text(TextRaw),
+      nWords = stringi::stri_count_words(TextMod),
+      nChars = nchar(TextMod)
+    ) %>%
+    arrow::write_parquet(.tab_row$PathOut)
+
+  try(fs::file_delete(.tab_row$PathTmp), silent = TRUE)
+}
+
+
+
+
+
+
+# for (i in seq_len(nrow(fil_use_))) {
+#   cur_ <- format_number(i, "c")
+#   tot_ <- format_number(nrow(fil_use_), "c")
+#   per_ <- format_number(i / nrow(fil_use_), "p")
+#
+#   print_verbose(paste0("Processing: ", cur_, "/", tot_, " (", per_, ")"), .verbose, .line = "\r")
+#   if (file.exists(fil_use_$PathOut[i])) next
+#   fs::dir_create(dirname(fil_use_$PathOut[i]))
+#   zip::unzip(
+#     zipfile = fil_use_$PathZIP[i],
+#     files = fil_zip_$FileName[i],
+#     exdir = lp_$Temporary$DocumentData,
+#     overwrite = TRUE
+#   )
+#
+#   tibble::tibble(
+#     CIK = fil_use_$CIK[i],
+#     HashDocument = fil_use_$HashDocument[i],
+#     HTML = readChar(fil_use_$PathTmp[i], file.info(fil_use_$PathTmp[i])$size)
+#   ) %>%
+#     dplyr::mutate(
+#       TextRaw = purrr::map_chr(HTML, read_html),
+#       TextMod = standardize_text(TextRaw),
+#       nWords = stringi::stri_count_words(TextMod),
+#       nChars = nchar(TextMod)
+#     ) %>%
+#     arrow::write_parquet(fil_use_$PathOut[i])
+#
+#   try(fs::file_delete(fil_use_$PathTmp[i]), silent = TRUE)
+# }
+
+#
+#
+#
+#   fil_tobe_parsed_ <- help_get_parse_files(.dir, .verbose)
+#   arr_tobe_parsed_ <- arrow::open_dataset(fil_tobe_parsed_)
+#   cik_tobe_parsed_ <- dplyr::collect(dplyr::distinct(arr_tobe_parsed_, CIK))[["CIK"]]
+#   nrows_ <- format_number(nrow(arr_tobe_parsed_))
+#   nciks_ <- format_number(length(cik_tobe_parsed_))
+#   rm(arr_tobe_parsed_)
+#
+#
+#   msg_ <- paste0("Parsing Documents: ", nrows_, " Documents (", nciks_, " CIKs)")
+#   print_verbose(msg_, .verbose, .line = "\n\n")
+#   future::plan("multisession", workers = .workers)
+#   furrr::future_walk(
+#     .x = cik_tobe_parsed_,
+#     .f = ~ help_parse_files(fil_tobe_parsed_, .x),
+#     .options = furrr::furrr_options(seed = TRUE),
+#     .progress = .verbose
+#   )
+#   future::plan("default")
 
 # DeBug ---------------------------------------------------------------------------------------
 if (FALSE) {
@@ -441,15 +642,15 @@ if (FALSE) {
     .to = NULL,
     .ciks = NULL,
     .formtypes = forms,
-    .doctypes = c("Exhibit 10"),
-    .workers = 5L,
+    .doctypes = c("Exhibit 10", "10-K", "10-K/A", "10-Q", "10-Q/A"),
+    .workers = 10L,
     .verbose = TRUE
   )
 
   for (i in 1:100) {
     edgar_parse_documents(
       .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-      .workers = 2L,
+      .workers = 5L,
       .verbose = TRUE
     )
     Sys.sleep(60 * 60)
@@ -480,6 +681,18 @@ if (FALSE) {
 }
 
 
+#
+# use_all_ <- arrow::open_dataset(path_yq_) %>%
+#   dplyr::filter(Error == 0) %>%
+#   dplyr::mutate(DocName = paste0(CIK, "-", HashDocument)) %>%
+#   dplyr::filter(!DocName %in% prc_) %>%
+#   dplyr::collect() %>%
+#   dplyr::left_join(
+#     y = dplyr::select(get("Table_DocTypesRaw"), Type = DocTypeRaw, DocTypeMod)
+#   ) %>%
+#   dplyr::filter(DocTypeMod ==)
+#
+# Table_FormTypesRaw
 
 
 # ToBedeleted ---------------------------------------------------------------------------------
