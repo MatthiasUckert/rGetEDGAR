@@ -461,7 +461,7 @@ get_non_processed_files <- function(.dir, .yq) {
       y = dplyr::select(get("Table_DocTypesRaw"), DocTypeRaw, DocTypeMod),
       by = dplyr::join_by(DocTypeRaw)
     ) %>%
-    dplyr::filter(DocTypeMod == "Exhibit 10") %>%
+    dplyr::filter(DocTypeMod %in% c("Exhibit 10", "10-K", "10-K/A", "10-Q", "10-Q/A")) %>%
     dplyr::mutate(
       DocTypeMod = gsub(" ", "", DocTypeMod),
       DocTypeMod = gsub("\\/|\\.", "-", DocTypeMod),
@@ -517,20 +517,27 @@ parse_files <- function(.tab_row) {
     overwrite = TRUE
   )
 
-  tibble::tibble(
-    CIK = .tab_row$CIK,
-    HashIndex = .tab_row$HashIndex,
-    HashDocument = .tab_row$HashDocument,
-    HTML = readChar(.tab_row$PathTmp, file.info(.tab_row$PathTmp)$size)
-  ) %>%
-    dplyr::mutate(
-      TextRaw = purrr::map_chr(HTML, read_html),
-      TextMod = standardize_text(TextRaw),
-      nWords = stringi::stri_count_words(TextMod),
-      nChars = nchar(TextMod)
+  out_ <- try(R.utils::withTimeout(
+    expr =   tibble::tibble(
+      CIK = .tab_row$CIK,
+      HashIndex = .tab_row$HashIndex,
+      HashDocument = .tab_row$HashDocument,
+      HTML = readChar(.tab_row$PathTmp, file.info(.tab_row$PathTmp)$size)
     ) %>%
-    arrow::write_parquet(.tab_row$PathOut)
+      dplyr::mutate(
+        TextRaw = purrr::map_chr(HTML, read_html),
+        TextMod = standardize_text(TextRaw),
+        nWords = stringi::stri_count_words(TextMod),
+        nChars = nchar(TextMod)
+      ),
+    timeout = 300,
+    onTimeout = "error"
 
+  ), silent = TRUE)
+
+  if (!inherits(out_, "try-error")) {
+    arrow::write_parquet(out_, .tab_row$PathOut)
+  }
   try(fs::file_delete(.tab_row$PathTmp), silent = TRUE)
 }
 
@@ -647,14 +654,25 @@ if (FALSE) {
     .verbose = TRUE
   )
 
-  for (i in 1:100) {
+  for (i in 1:1000) {
+    dir_src <- "/Users/matthiasuckert/Dropbox/_share_data/rGetEDGAR/DocumentData/Original"
+    dir_out <- "/Users/matthiasuckert/RProjects/Packages/_package_debug/rGetEDGAR/DocumentData/Original"
+      lft_ <- rUtils::lft(dir_src) %>%
+        dplyr::mutate(path_out = file.path(dir_out, basename(path))) %>%
+        dplyr::select(path_src = path, path_out)
+
+      file.copy(lft_$path_src, lft_$path_out)
+
     edgar_parse_documents(
       .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-      .workers = 5L,
+      .workers = 10L,
       .verbose = TRUE
     )
-    Sys.sleep(60 * 60)
+
+    Sys.sleep(300)
   }
+
+
 
 
 
