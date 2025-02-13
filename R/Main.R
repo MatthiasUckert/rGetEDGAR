@@ -375,9 +375,9 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
 #'
 #' @export
 edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
-
   yq_ <- gsub("\\.", "-", get_year_qtr_table()[["YearQuarter"]])
 
+  i = 49
   future::plan("multisession", workers = .workers)
   for (i in seq_len(length(yq_))) {
     lst_use_ <- get_non_processed_files(.dir, yq_[i])
@@ -388,6 +388,8 @@ edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
     if (len_ == 0) {
       next
     }
+    # Sys.sleep(100)
+    # .tab_row <- lst_use_[[1]]
 
     if (.verbose) cat("\n")
     furrr::future_walk(
@@ -398,6 +400,7 @@ edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
   }
   future::plan("default")
 }
+
 
 #' Get Non-Processed SEC EDGAR Files
 #'
@@ -424,7 +427,7 @@ edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
 get_non_processed_files <- function(.dir, .yq) {
   lp_ <- get_directories(.dir)
 
-  paths_zips_ <-  list_files(lp_$DocumentData$Original) %>%
+  paths_zips_ <- list_files(lp_$DocumentData$Original) %>%
     dplyr::mutate(YearQuarter = stringi::stri_sub(doc_id, 21, 26)) %>%
     dplyr::filter(YearQuarter == .yq)
 
@@ -517,23 +520,18 @@ parse_files <- function(.tab_row) {
     overwrite = TRUE
   )
 
-  out_ <- try(R.utils::withTimeout(
-    expr =   tibble::tibble(
-      CIK = .tab_row$CIK,
-      HashIndex = .tab_row$HashIndex,
-      HashDocument = .tab_row$HashDocument,
-      HTML = readChar(.tab_row$PathTmp, file.info(.tab_row$PathTmp)$size)
-    ) %>%
-      dplyr::mutate(
-        TextRaw = purrr::map_chr(HTML, read_html),
-        TextMod = standardize_text(TextRaw),
-        nWords = stringi::stri_count_words(TextMod),
-        nChars = nchar(TextMod)
-      ),
-    timeout = 300,
-    onTimeout = "error"
-
-  ), silent = TRUE)
+  out_ <- try(tibble::tibble(
+    CIK = .tab_row$CIK,
+    HashIndex = .tab_row$HashIndex,
+    HashDocument = .tab_row$HashDocument,
+    HTML = readChar(.tab_row$PathTmp, file.info(.tab_row$PathTmp)$size)
+  ) %>%
+    dplyr::mutate(
+      TextRaw = purrr::map_chr(HTML, read_html),
+      TextMod = standardize_text(TextRaw),
+      nWords = stringi::stri_count_words(TextMod),
+      nChars = nchar(TextMod)
+    ), silent = TRUE)
 
   if (!inherits(out_, "try-error")) {
     arrow::write_parquet(out_, .tab_row$PathOut)
@@ -541,6 +539,106 @@ parse_files <- function(.tab_row) {
   try(fs::file_delete(.tab_row$PathTmp), silent = TRUE)
 }
 
+
+
+# DeBug ---------------------------------------------------------------------------------------
+if (FALSE) {
+  devtools::load_all(".")
+  library(rGetEDGAR)
+  forms <- c(
+    "10-K", "10-K/A",
+    "10-Q", "10-Q/A",
+    "8-K", "8-K/A",
+    "20-F", "20-F/A",
+    "S-1", "S-1/A",
+    "S-4", "S-4/A",
+    "F-1", "F-1/A",
+    "F-4", "F-4/A",
+    "CT ORDER"
+  )
+  user <- unname(ifelse(
+    Sys.info()["sysname"] == "Darwin",
+    "PetroParkerLosSpiderHombreABC12@Outlook.com",
+    "TonyStarkIronManWeaponXYZ847263@Outlook.com"
+  ))
+
+  # Master Index
+  edgar_get_master_index(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .user = user,
+    .from = NULL,
+    .to = NULL,
+    .verbose = TRUE
+  )
+
+  # Document Links
+  edgar_get_document_links(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .user = user,
+    .from = NULL,
+    .to = NULL,
+    .ciks = NULL,
+    .formtypes = forms,
+    .workers = 5L,
+    .verbose = TRUE
+  )
+
+  edgar_download_document(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .user = user,
+    .from = NULL,
+    .to = NULL,
+    .ciks = NULL,
+    .formtypes = forms,
+    .doctypes = c("Exhibit 10", "10-K", "10-K/A", "10-Q", "10-Q/A"),
+    .workers = 10L,
+    .verbose = TRUE
+  )
+
+  for (i in 1:1000) {
+    dir_src <- "/Users/matthiasuckert/Dropbox/_share_data/rGetEDGAR/DocumentData/Original"
+    dir_out <- "/Users/matthiasuckert/RProjects/Packages/_package_debug/rGetEDGAR/DocumentData/Original"
+    lft_ <- rUtils::lft(dir_src) %>%
+      dplyr::mutate(path_out = file.path(dir_out, basename(path))) %>%
+      dplyr::select(path_src = path, path_out) %>%
+      dplyr::filter(!file.exists(path_out))
+
+    file.copy(lft_$path_src, lft_$path_out)
+
+    edgar_parse_documents(
+      .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+      .workers = 2L,
+      .verbose = TRUE
+    )
+
+    Sys.sleep(300)
+  }
+
+
+
+
+
+
+
+  tab_master <- edgar_read_master_index(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .from = NULL,
+    .to = NULL,
+    .ciks = NULL,
+    .formtypes = forms,
+    .collect = TRUE
+  )
+
+  tab_docs <- edgar_read_document_links(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .from = NULL,
+    .to = NULL,
+    .ciks = NULL,
+    .formtypes = forms,
+    .doctypes = NULL,
+    .collect = TRUE
+  )
+}
 
 
 
@@ -599,105 +697,6 @@ parse_files <- function(.tab_row) {
 #   )
 #   future::plan("default")
 
-# DeBug ---------------------------------------------------------------------------------------
-if (FALSE) {
-  "19,969"
-  devtools::load_all(".")
-  library(rGetEDGAR)
-  forms <- c(
-    "10-K", "10-K/A",
-    "10-Q", "10-Q/A",
-    "8-K", "8-K/A",
-    "20-F", "20-F/A",
-    "S-1", "S-1/A",
-    "S-4", "S-4/A",
-    "F-1", "F-1/A",
-    "F-4", "F-4/A",
-    "CT ORDER"
-  )
-  user <- unname(ifelse(
-    Sys.info()["sysname"] == "Darwin",
-    "PetroParkerLosSpiderHombreABC12@Outlook.com",
-    "TonyStarkIronManWeaponXYZ847263@Outlook.com"
-  ))
-
-  # Master Index
-  edgar_get_master_index(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = user,
-    .from = NULL,
-    .to = NULL,
-    .verbose = TRUE
-  )
-
-  # Document Links
-  edgar_get_document_links(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = user,
-    .from = NULL,
-    .to = NULL,
-    .ciks = NULL,
-    .formtypes = forms,
-    .workers = 5L,
-    .verbose = TRUE
-  )
-
-  edgar_download_document(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .user = user,
-    .from = NULL,
-    .to = NULL,
-    .ciks = NULL,
-    .formtypes = forms,
-    .doctypes = c("Exhibit 10", "10-K", "10-K/A", "10-Q", "10-Q/A"),
-    .workers = 10L,
-    .verbose = TRUE
-  )
-
-  for (i in 1:1000) {
-    dir_src <- "/Users/matthiasuckert/Dropbox/_share_data/rGetEDGAR/DocumentData/Original"
-    dir_out <- "/Users/matthiasuckert/RProjects/Packages/_package_debug/rGetEDGAR/DocumentData/Original"
-      lft_ <- rUtils::lft(dir_src) %>%
-        dplyr::mutate(path_out = file.path(dir_out, basename(path))) %>%
-        dplyr::select(path_src = path, path_out)
-
-      file.copy(lft_$path_src, lft_$path_out)
-
-    edgar_parse_documents(
-      .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-      .workers = 10L,
-      .verbose = TRUE
-    )
-
-    Sys.sleep(300)
-  }
-
-
-
-
-
-
-
-  tab_master <- edgar_read_master_index(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .from = NULL,
-    .to = NULL,
-    .ciks = NULL,
-    .formtypes = forms,
-    .collect = TRUE
-  )
-
-  tab_docs <- edgar_read_document_links(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .from = NULL,
-    .to = NULL,
-    .ciks = NULL,
-    .formtypes = forms,
-    .doctypes = NULL,
-    .collect = TRUE
-  )
-}
-
 
 #
 # use_all_ <- arrow::open_dataset(path_yq_) %>%
@@ -712,8 +711,6 @@ if (FALSE) {
 #
 # Table_FormTypesRaw
 
-
-# ToBedeleted ---------------------------------------------------------------------------------
 
 #'
 #' #' Download SEC EDGAR Documents
@@ -962,10 +959,6 @@ if (FALSE) {
 # future::plan("default")
 # on.exit(future::plan("default"))
 #
-
-
-
-# ToBeChecked ---------------------------------------------------------------------------------
 
 
 #
