@@ -6,7 +6,7 @@
 \usage{
 html_options(
   .recover = TRUE,
-  .huge = FALSE,
+  .huge = TRUE,
   .noerror = FALSE,
   .nowarning = FALSE,
   .encoding = "UTF-8"
