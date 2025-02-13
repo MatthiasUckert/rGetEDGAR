@@ -320,6 +320,7 @@ html_options <- function(
   )
 }
 
+
 #' Read and extract text from HTML content
 #'
 #' @param .html Character string containing HTML content or path to HTML file
@@ -333,13 +334,24 @@ read_html <- function(.html, .options = html_options()) {
     return(NA_character_)
   }
 
-  txt_ <- try(rvest::html_text2(doc_), silent = TRUE)
+  reg_problem_ <- "([\t\n\r\u00A0]|&#(?:9|10|13|160);)"
+  ratio_problem_ <- stringi::stri_count_regex(.html, reg_problem_) / nchar(.html)
+
+  if (ratio_problem_ > 0.1) {
+    txt_ <- try(rvest::html_text(doc_), silent = TRUE)
+  } else {
+    txt_ <- try(rvest::html_text2(doc_), silent = TRUE)
+  }
+
   if (inherits(txt_, "try-error")) {
     return(NA_character_)
   }
 
   return(txt_)
 }
+
+
+
 
 
 #' Display HTML Content in Browser
