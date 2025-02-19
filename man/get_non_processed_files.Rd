@@ -4,12 +4,14 @@
 \alias{get_non_processed_files}
 \title{Get Non-Processed SEC EDGAR Files}
 \usage{
-get_non_processed_files(.dir, .yq)
+get_non_processed_files(.dir, .yq, .doc_ids = NULL)
 }
 \arguments{
 \item{.dir}{Character string specifying the base directory for SEC data}
 
 \item{.yq}{Character string specifying the year-quarter in format "YYYY-QQ"}
+
+\item{.doc_ids}{DocIDs to be processed}
 }
 \value{
 List of tibbles containing file information for unprocessed documents:

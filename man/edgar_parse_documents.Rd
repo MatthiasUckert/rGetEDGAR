@@ -4,12 +4,14 @@
 \alias{edgar_parse_documents}
 \title{Download SEC EDGAR Documents}
 \usage{
-edgar_parse_documents(.dir, .workers = 1L, .verbose = TRUE)
+edgar_parse_documents(.dir, .workers = 1L, .doc_ids = NULL, .verbose = TRUE)
 }
 \arguments{
 \item{.dir}{Character string specifying the directory where the downloaded data will be stored}
 
 \item{.workers}{Integer specifying the number of parallel workers for downloading}
+
+\item{.doc_ids}{DocIDs to be processed}
 
 \item{.verbose}{Logical indicating whether to print progress messages}
 }

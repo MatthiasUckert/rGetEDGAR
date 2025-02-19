@@ -369,6 +369,7 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
 #'
 #' @param .dir Character string specifying the directory where the downloaded data will be stored
 #' @param .workers Integer specifying the number of parallel workers for downloading
+#' @param .doc_ids DocIDs to be processed
 #' @param .verbose Logical indicating whether to print progress messages
 #'
 #' @return No return value, called for side effects
@@ -410,6 +411,7 @@ edgar_parse_documents <- function(.dir, .workers = 1L, .doc_ids = NULL, .verbose
 #'
 #' @param .dir Character string specifying the base directory for SEC data
 #' @param .yq Character string specifying the year-quarter in format "YYYY-QQ"
+#' @param .doc_ids DocIDs to be processed
 #'
 #' @return List of tibbles containing file information for unprocessed documents:
 #'   \itemize{
