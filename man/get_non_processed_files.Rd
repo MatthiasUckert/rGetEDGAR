@@ -17,7 +17,7 @@ List of tibbles containing file information for unprocessed documents:
 \item HashIndex: Unique identifier for the filing
 \item CIK: Company identifier
 \item HashDocument: Document hash
-\item DocName: Document name
+\item DocID: Document name
 \item FileName: Original file name
 \item PathZIP: Path to source ZIP file
 \item PathTmp: Temporary extraction path

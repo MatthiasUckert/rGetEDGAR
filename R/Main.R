@@ -306,13 +306,13 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
       .dir, path_yq_, .from, .to, .ciks, .formtypes, .doctypes, FALSE
     ) %>%
       dplyr::filter(Error == 0) %>%
-      dplyr::mutate(DocName = paste0(CIK, "-", HashDocument)) %>%
-      dplyr::filter(!DocName %in% prc_) %>%
+      dplyr::mutate(DocID = paste0(CIK, "-", HashDocument)) %>%
+      dplyr::filter(!DocID %in% prc_) %>%
       dplyr::collect() %>%
       dplyr::mutate(
         FileExt = paste0(".", tools::file_ext(UrlDocument)),
-        PathTMP = file.path(dir_yq_, paste0(DocName, FileExt)),
-        UrlDocument = purrr::set_names(UrlDocument, DocName)
+        PathTMP = file.path(dir_yq_, paste0(DocID, FileExt)),
+        UrlDocument = purrr::set_names(UrlDocument, DocID)
       ) %>%
       dplyr::filter(!FileExt == ".") %>%
       dplyr::mutate(Split = ceiling(dplyr::row_number() / 10))
@@ -375,9 +375,9 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
 #'
 #' @export
 edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
+  lp_ <- get_directories(.dir)
   yq_ <- gsub("\\.", "-", get_year_qtr_table()[["YearQuarter"]])
 
-  i = 49
   future::plan("multisession", workers = .workers)
   for (i in seq_len(length(yq_))) {
     lst_use_ <- get_non_processed_files(.dir, yq_[i])
@@ -416,7 +416,7 @@ edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
 #'     \item HashIndex: Unique identifier for the filing
 #'     \item CIK: Company identifier
 #'     \item HashDocument: Document hash
-#'     \item DocName: Document name
+#'     \item DocID: Document name
 #'     \item FileName: Original file name
 #'     \item PathZIP: Path to source ZIP file
 #'     \item PathTmp: Temporary extraction path
@@ -435,6 +435,8 @@ get_non_processed_files <- function(.dir, .yq) {
     return(list())
   }
 
+  file.exists(paths_zips_$path)
+
   paths_link_ <- list_files(lp_$DocumentLinks$Parquet) %>%
     dplyr::filter(endsWith(doc_id, .yq))
 
@@ -447,12 +449,12 @@ get_non_processed_files <- function(.dir, .yq) {
   ) %>%
     dplyr::bind_rows(.id = "FileZIP") %>%
     dplyr::mutate(
-      DocName = fs::path_ext_remove(filename),
+      DocID = fs::path_ext_remove(filename),
       FileExt = tolower(tools::file_ext(filename)),
-      CIK = stringi::stri_sub(DocName, 1, 10),
-      HashDocument = stringi::stri_sub(DocName, 12, 43),
+      CIK = stringi::stri_sub(DocID, 1, 10),
+      HashDocument = stringi::stri_sub(DocID, 12, 43),
     ) %>%
-    dplyr::filter(!DocName %in% fil_prcs_) %>%
+    dplyr::filter(!DocID %in% fil_prcs_) %>%
     dplyr::filter(FileExt %in% c("txt", "htm", "html", "xml", "xsd")) %>%
     dplyr::left_join(
       y = arrow::open_dataset(paths_link_$path) %>%
@@ -468,11 +470,11 @@ get_non_processed_files <- function(.dir, .yq) {
     dplyr::mutate(
       DocTypeMod = gsub(" ", "", DocTypeMod),
       DocTypeMod = gsub("\\/|\\.", "-", DocTypeMod),
-      PathOut = file.path(lp_$DocumentData$Parsed, .yq, gsub(" ", "", DocTypeMod), paste0(DocName, ".parquet")),
+      PathOut = file.path(lp_$DocumentData$Parsed, .yq, gsub(" ", "", DocTypeMod), paste0(DocID, ".parquet")),
       PathTmp = file.path(lp_$Temporary$DocumentData, filename),
     ) %>%
     dplyr::select(
-      HashIndex, CIK, HashDocument, DocName,
+      HashIndex, CIK, HashDocument, DocID,
       FileName = filename, PathZIP, PathTmp, PathOut
     )
 
@@ -480,7 +482,7 @@ get_non_processed_files <- function(.dir, .yq) {
     return(list())
   }
 
-  split(fil_zip_, fil_zip_$DocName)
+  split(fil_zip_, fil_zip_$DocID)
 }
 
 #' Parse SEC EDGAR Files
@@ -595,29 +597,20 @@ if (FALSE) {
     .verbose = TRUE
   )
 
-  for (i in 1:1000) {
-    dir_src <- "/Users/matthiasuckert/Dropbox/_share_data/rGetEDGAR/DocumentData/Original"
-    dir_out <- "/Users/matthiasuckert/RProjects/Packages/_package_debug/rGetEDGAR/DocumentData/Original"
-    lft_ <- rUtils::lft(dir_src) %>%
-      dplyr::mutate(path_out = file.path(dir_out, basename(path))) %>%
-      dplyr::select(path_src = path, path_out) %>%
-      dplyr::filter(!file.exists(path_out))
+  dir_src <- "/Users/matthiasuckert/Dropbox/_share_data/rGetEDGAR/DocumentData/Original"
+  dir_out <- "/Users/matthiasuckert/RProjects/Packages/_package_debug/rGetEDGAR/DocumentData/Original"
+  lft_ <- rUtils::lft(dir_src) %>%
+    dplyr::mutate(path_out = file.path(dir_out, basename(path))) %>%
+    dplyr::select(path_src = path, path_out) %>%
+    dplyr::filter(!file.exists(path_out))
 
-    file.copy(lft_$path_src, lft_$path_out)
+  file.copy(lft_$path_src, lft_$path_out)
 
-    edgar_parse_documents(
-      .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-      .workers = 2L,
-      .verbose = TRUE
-    )
-
-    Sys.sleep(300)
-  }
-
-
-
-
-
+  edgar_parse_documents(
+    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .workers = 10L,
+    .verbose = TRUE
+  )
 
 
   tab_master <- edgar_read_master_index(
@@ -701,8 +694,8 @@ if (FALSE) {
 #
 # use_all_ <- arrow::open_dataset(path_yq_) %>%
 #   dplyr::filter(Error == 0) %>%
-#   dplyr::mutate(DocName = paste0(CIK, "-", HashDocument)) %>%
-#   dplyr::filter(!DocName %in% prc_) %>%
+#   dplyr::mutate(DocID = paste0(CIK, "-", HashDocument)) %>%
+#   dplyr::filter(!DocID %in% prc_) %>%
 #   dplyr::collect() %>%
 #   dplyr::left_join(
 #     y = dplyr::select(get("Table_DocTypesRaw"), Type = DocTypeRaw, DocTypeMod)

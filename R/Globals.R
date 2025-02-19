@@ -1,6 +1,6 @@
 utils::globalVariables(c(
   # Index and Identification Variables
-  "CIK", "Cik", "HashIndex", "HashDocument", "ID", "DocName", "doc_id",
+  "CIK", "Cik", "HashIndex", "HashDocument", "ID", "DocID", "doc_id",
 
   # Date and Period Variables
   "Year", "Quarter", "YearQuarter",

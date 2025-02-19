@@ -742,7 +742,7 @@ help_download_url_request <- function(.url, .user, .path_out) {
 #' - FileZIP: Original ZIP file path
 #' - DocFile: Document filename
 #' - Ext: File extension
-#' - DocName: Unique document identifier
+#' - DocID: Unique document identifier
 #' - YearQuarter: Filing period
 #' - HashIndex: Filing index hash
 #' - HashDocument: Document hash
@@ -764,8 +764,8 @@ help_get_parse_files <- function(.dir, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
   if (!nrow(arrow::open_dataset(lp_$DocumentData$Parsed)) == 0) {
     fil_prc_ <- arrow::open_dataset(lp_$DocumentData$Parsed) %>%
-      dplyr::mutate(DocName = paste0(CIK, "-", HashDocument)) %>%
-      dplyr::distinct(DocName) %>%
+      dplyr::mutate(DocID = paste0(CIK, "-", HashDocument)) %>%
+      dplyr::distinct(DocID) %>%
       dplyr::collect() %>%
       dplyr::pull()
   } else {
@@ -780,10 +780,10 @@ help_get_parse_files <- function(.dir, .verbose = TRUE) {
     dplyr::select(FileZIP, DocFile = filename) %>%
     dplyr::mutate(
       Ext = tools::file_ext(DocFile),
-      DocName = fs::path_ext_remove(DocFile),
+      DocID = fs::path_ext_remove(DocFile),
       YearQuarter = stringi::stri_sub(FileZIP, 21, 26)
     ) %>%
-    dplyr::filter(!DocName %in% fil_prc_) %>%
+    dplyr::filter(!DocID %in% fil_prc_) %>%
     dplyr::filter(Ext %in% c("txt", "htm", "html", "xml", "xsd")) %>%
     dplyr::inner_join(
       y = list_files(lp_$DocumentLinks$Parquet) %>%
@@ -805,10 +805,10 @@ help_get_parse_files <- function(.dir, .verbose = TRUE) {
     .f = ~ arrow::open_dataset(.x$PathLinks[1]) %>%
       dplyr::filter(Error == 0) %>%
       dplyr::select(HashIndex, HashDocument, CIK, Year, Quarter, DocTypeRaw = Type) %>%
-      dplyr::mutate(DocName = paste0(CIK, "-", HashDocument)) %>%
+      dplyr::mutate(DocID = paste0(CIK, "-", HashDocument)) %>%
       dplyr::collect() %>%
       dplyr::left_join(get("Table_DocTypesRaw"), by = "DocTypeRaw") %>%
-      dplyr::inner_join(.x, by = "DocName")
+      dplyr::inner_join(.x, by = "DocID")
   ) %>%
     dplyr::bind_rows() %>%
     dplyr::mutate(
@@ -885,7 +885,7 @@ help_parse_files <- function(.path_tobe, .cik) {
     .x = fil_cik_$path,
     .f = ~ tibble::tibble(HTML = readChar(.x, file.info(.x)$size))
   ) %>%
-    dplyr::bind_rows(.id = "DocName") %>%
+    dplyr::bind_rows(.id = "DocID") %>%
     dplyr::mutate(
       TextRaw = purrr::map_chr(HTML, read_html),
       TextMod = standardize_text(TextRaw),
@@ -895,9 +895,9 @@ help_parse_files <- function(.path_tobe, .cik) {
     dplyr::left_join(
       y = use_all_ %>%
         dplyr::select(
-          DocName, CIK, HashIndex, HashDocument, Year, Quarter, DocClass, DocTypeRaw, DocTypeMod
+          DocID, CIK, HashIndex, HashDocument, Year, Quarter, DocClass, DocTypeRaw, DocTypeMod
         ),
-      by = "DocName"
+      by = "DocID"
     ) %>%
     dplyr::select(
       CIK, HashIndex, HashDocument, Year, Quarter, DocClass, DocTypeRaw, DocTypeMod,

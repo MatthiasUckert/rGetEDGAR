@@ -18,7 +18,7 @@ files that need to be parsed. The Parquet file contains columns:
 \item FileZIP: Original ZIP file path
 \item DocFile: Document filename
 \item Ext: File extension
-\item DocName: Unique document identifier
+\item DocID: Unique document identifier
 \item YearQuarter: Filing period
 \item HashIndex: Filing index hash
 \item HashDocument: Document hash
