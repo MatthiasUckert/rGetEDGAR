@@ -374,13 +374,13 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
 #' @return No return value, called for side effects
 #'
 #' @export
-edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
+edgar_parse_documents <- function(.dir, .workers = 1L, .doc_ids = NULL, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
   yq_ <- gsub("\\.", "-", get_year_qtr_table()[["YearQuarter"]])
 
   future::plan("multisession", workers = .workers)
   for (i in seq_len(length(yq_))) {
-    lst_use_ <- get_non_processed_files(.dir, yq_[i])
+    lst_use_ <- get_non_processed_files(.dir, yq_[i], .doc_ids)
 
     len_ <- length(lst_use_)
     msg_ <- paste0("Processing YearQuarter: ", yq_[i], " (", format_number(len_), " Docs)")
@@ -424,7 +424,7 @@ edgar_parse_documents <- function(.dir, .workers = 1L, .verbose = TRUE) {
 #'   }
 #'
 #' @keywords internal
-get_non_processed_files <- function(.dir, .yq) {
+get_non_processed_files <- function(.dir, .yq, .doc_ids = NULL) {
   lp_ <- get_directories(.dir)
 
   paths_zips_ <- list_files(lp_$DocumentData$Original) %>%
@@ -450,27 +450,25 @@ get_non_processed_files <- function(.dir, .yq) {
     dplyr::bind_rows(.id = "FileZIP") %>%
     dplyr::mutate(
       DocID = fs::path_ext_remove(filename),
-      FileExt = tolower(tools::file_ext(filename)),
-      CIK = stringi::stri_sub(DocID, 1, 10),
-      HashDocument = stringi::stri_sub(DocID, 12, 43),
+      FileExt = tolower(tools::file_ext(filename))
     ) %>%
     dplyr::filter(!DocID %in% fil_prcs_) %>%
     dplyr::filter(FileExt %in% c("txt", "htm", "html", "xml", "xsd")) %>%
     dplyr::left_join(
       y = arrow::open_dataset(paths_link_$path) %>%
-        dplyr::select(CIK, HashIndex, HashDocument, DocTypeRaw = Type) %>%
+        dplyr::select(DocID, CIK, HashIndex, HashDocument, DocTypeRaw = Type) %>%
         dplyr::collect(),
-      by = dplyr::join_by(CIK, HashDocument)
+      by = dplyr::join_by(DocID)
     ) %>%
     dplyr::left_join(
       y = dplyr::select(get("Table_DocTypesRaw"), DocTypeRaw, DocTypeMod),
       by = dplyr::join_by(DocTypeRaw)
     ) %>%
-    dplyr::filter(DocTypeMod %in% c("Exhibit 10", "10-K", "10-K/A", "10-Q", "10-Q/A")) %>%
+    # dplyr::filter(DocTypeMod %in% c("Exhibit 10", "10-K", "10-K/A", "10-Q", "10-Q/A")) %>%
     dplyr::mutate(
       DocTypeMod = gsub(" ", "", DocTypeMod),
       DocTypeMod = gsub("\\/|\\.", "-", DocTypeMod),
-      PathOut = file.path(lp_$DocumentData$Parsed, .yq, gsub(" ", "", DocTypeMod), paste0(DocID, ".parquet")),
+      PathOut = file.path(lp_$DocumentData$Parsed, gsub(" ", "", DocTypeMod), .yq, paste0(DocID, ".parquet")),
       PathTmp = file.path(lp_$Temporary$DocumentData, filename),
     ) %>%
     dplyr::select(
@@ -478,9 +476,14 @@ get_non_processed_files <- function(.dir, .yq) {
       FileName = filename, PathZIP, PathTmp, PathOut
     )
 
+  if (!is.null(.doc_ids)) {
+    fil_zip_ <- dplyr::filter(fil_zip_, DocID %in% .doc_ids)
+  }
+
   if (nrow(fil_zip_) == 0) {
     return(list())
   }
+
 
   split(fil_zip_, fil_zip_$DocID)
 }
