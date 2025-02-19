@@ -481,6 +481,7 @@ write_link_data <- function(
 
       dplyr::tbl(con_, params_$table_name) %>%
         dplyr::filter(YearQuarter == use_yq_) %>%
+        dplyr::mutate(DocID = paste0(CIK, "-", HashDocument), .after = HashIndex) %>%
         dplyr::collect() %>%
         dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
         arrow::write_parquet(fil_yq_)
