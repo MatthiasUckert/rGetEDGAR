@@ -442,7 +442,8 @@ get_non_processed_files <- function(.dir, .yq, .doc_ids = NULL) {
   paths_link_ <- list_files(lp_$DocumentLinks$Parquet) %>%
     dplyr::filter(endsWith(doc_id, .yq))
 
-  dir_docs_ <- dplyr::filter(list_files(lp_$DocumentData$Parsed), doc_id == .yq)
+  dir_type_ <- list_files(lp_$DocumentData$Parsed)[["path"]]
+  dir_docs_ <- dplyr::filter(list_files(dir_type_), doc_id == .yq)
   fil_prcs_ <- list_files(dir_docs_, .rec = TRUE)[["doc_id"]]
 
   fil_zip_ <- purrr::map(
@@ -611,9 +612,16 @@ if (FALSE) {
 
   file.copy(lft_$path_src, lft_$path_out)
 
+  doc_ids <- arrow::open_dataset("E:/Uckert/Dropbox/_share_data/LinkData.parquet") %>%
+    dplyr::select(DocID) %>%
+    dplyr::collect() %>%
+    dplyr::pull()
+
+
   edgar_parse_documents(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .workers = 10L,
+    .workers = 25L,
+    .doc_ids = NULL,
     .verbose = TRUE
   )
 
