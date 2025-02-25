@@ -447,8 +447,13 @@ get_non_processed_files <- function(.dir, .yq, .doc_ids = NULL) {
     dplyr::filter(endsWith(doc_id, .yq))
 
   dir_type_ <- list_files(lp_$DocumentData$Parsed)[["path"]]
-  dir_docs_ <- dplyr::filter(list_files(dir_type_), doc_id == .yq)
-  fil_prcs_ <- list_files(dir_docs_, .rec = TRUE)[["doc_id"]]
+  if (length(dir_type_) == 0) {
+    fil_prcs_ <- NA_character_
+  } else {
+    dir_docs_ <- dplyr::filter(list_files(dir_type_), doc_id == .yq)
+    fil_prcs_ <- list_files(dir_docs_, .rec = TRUE)[["doc_id"]]
+  }
+
 
   fil_zip_ <- purrr::map(
     .x = paths_zips_$path,
@@ -471,7 +476,6 @@ get_non_processed_files <- function(.dir, .yq, .doc_ids = NULL) {
       y = dplyr::select(get("Table_DocTypesRaw"), DocTypeRaw, DocTypeMod),
       by = dplyr::join_by(DocTypeRaw)
     ) %>%
-    # dplyr::filter(DocTypeMod %in% c("Exhibit 10", "10-K", "10-K/A", "10-Q", "10-Q/A")) %>%
     dplyr::mutate(
       DocTypeMod = gsub(" ", "", DocTypeMod),
       DocTypeMod = gsub("\\/|\\.", "-", DocTypeMod),
@@ -574,9 +578,12 @@ if (FALSE) {
     "TonyStarkIronManWeaponXYZ847263@Outlook.com"
   ))
 
+  dir_debug <- fs::dir_create("../_package_debug/rGetEDGAR")
+  lp_ <- get_directories(dir_debug)
+
   # Master Index
   edgar_get_master_index(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .dir = dir_debug,
     .user = user,
     .from = NULL,
     .to = NULL,
@@ -585,7 +592,7 @@ if (FALSE) {
 
   # Document Links
   edgar_get_document_links(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .dir = dir_debug,
     .user = user,
     .from = NULL,
     .to = NULL,
@@ -596,7 +603,7 @@ if (FALSE) {
   )
 
   edgar_download_document(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
+    .dir = dir_debug,
     .user = user,
     .from = NULL,
     .to = NULL,
@@ -607,12 +614,19 @@ if (FALSE) {
     .verbose = TRUE
   )
 
-
+  tab_ex10 <- dplyr::filter(Table_DocTypesRaw, DocTypeMod == "Exhibit 10")
+  scales::comma(sum(ex10$nDocs))
+  ids_ex10 <- arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
+    dplyr::filter(Type %in% tab_ex10$DocTypeRaw) %>%
+    dplyr::distinct(DocID) %>%
+    dplyr::collect() %>%
+    dplyr::pull(DocID)
+  scales::comma(length(ids_ex10))
 
   edgar_parse_documents(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
     .workers = 10L,
-    .doc_ids = NULL,
+    .doc_ids = ids_ex10,
     .verbose = TRUE
   )
 
