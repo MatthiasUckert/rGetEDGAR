@@ -421,6 +421,14 @@ create_error_table <- function(.source = c("DocumentLinks", "LandingPage")) {
 }
 
 
+if (FALSE) {
+  .dir = fs::dir_create("../_package_debug/rGetEDGAR")
+  .tab = NULL
+  .source = "LandingPage" # c("DocumentLinks", "LandingPage"),
+  .target = "parquet" #c("sqlite", "parquet"),
+  .verbose = TRUE
+}
+
 #' Write SEC EDGAR Link Data to Different Storage Formats
 #'
 #' @description
@@ -483,12 +491,14 @@ write_link_data <- function(
         dplyr::tbl(con_, params_$table_name) %>%
           dplyr::filter(YearQuarter == use_yq_) %>%
           dplyr::mutate(DocID = paste0(CIK, "-", HashDocument), .after = HashIndex) %>%
+          dplyr::filter(Error == 0) %>%
           dplyr::collect() %>%
           dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
           arrow::write_parquet(fil_yq_)
       } else {
-        dplyr::tbl(con_, params_$table_name) %>%
+        dplyr::tbl(con_,table_) %>%
           dplyr::filter(YearQuarter == use_yq_) %>%
+          dplyr::filter(Error == 0) %>%
           dplyr::collect() %>%
           dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
           arrow::write_parquet(fil_yq_)
