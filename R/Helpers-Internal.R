@@ -487,59 +487,28 @@ write_link_data <- function(
         fil_out = file.path(params_$DirParquet, paste0(nam_out, ".parquet"))
       )
 
-    if (.source == "DocumentLinks") {
-      tbl_ <- dplyr::tbl(con_, params_$table_name)
-      purrr::map2(
-        .x = combs_$YearQuarter,
-        .y = combs_$fil_out,
-        .f = ~ tbl_ %>%
-          dplyr::filter(YearQuarter == .x) %>%
+    for (i in seq_len(nrow(combs_))) {
+      yqt_ <- combs_$YearQuarter[i]
+      msg_ <- paste0("Updating ", .source, ": ", combs_$YearQuarter[i])
+      print_verbose(msg_, .verbose, .line = "\r")
+
+      if (.source == "DocumentLinks") {
+        dplyr::tbl(con_, params_$table_name) %>%
+          dplyr::filter(YearQuarter == yqt_) %>%
           dplyr::mutate(DocID = paste0(CIK, "-", HashDocument), .after = HashIndex) %>%
           dplyr::filter(Error == 0) %>%
           dplyr::collect() %>%
           dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
-          arrow::write_parquet(.y),
-        .progress = .verbose
-      )
-    } else {
-      tbl_ <- dplyr::tbl(con_, params_$table_name)
-      purrr::map2(
-        .x = combs_$YearQuarter,
-        .y = combs_$fil_out,
-        .f = ~ tbl_ %>%
-          dplyr::filter(YearQuarter == .x) %>%
+          arrow::write_parquet(combs_$fil_out[i])
+      } else {
+        dplyr::tbl(con_, table_) %>%
+          dplyr::filter(YearQuarter == yqt_) %>%
           dplyr::filter(Error == 0) %>%
           dplyr::collect() %>%
           dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
-          arrow::write_parquet(.y),
-        .progress = .verbose
-      )
+          arrow::write_parquet(combs_$fil_out[i])
+      }
     }
-#
-#     for (i in seq_len(length(yq_))) {
-#       use_yq_ <- yq_[i]
-#       nam_yq_ <- paste0(.source, "_", gsub("\\.", "-", use_yq_), ".parquet")
-#       fil_yq_ <- file.path(params_$DirParquet, nam_yq_)
-#       msg_yq_ <- paste0("Saving Data: ", .source, ": ", use_yq_)
-#       print_verbose(msg_yq_, .verbose, .line = "\r")
-#
-#       if (.source == "DocumentLinks") {
-#         dplyr::tbl(con_, params_$table_name) %>%
-#           dplyr::filter(YearQuarter == use_yq_) %>%
-#           dplyr::mutate(DocID = paste0(CIK, "-", HashDocument), .after = HashIndex) %>%
-#           dplyr::filter(Error == 0) %>%
-#           dplyr::collect() %>%
-#           dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
-#           arrow::write_parquet(fil_yq_)
-#       } else {
-#         dplyr::tbl(con_, table_) %>%
-#           dplyr::filter(YearQuarter == use_yq_) %>%
-#           dplyr::filter(Error == 0) %>%
-#           dplyr::collect() %>%
-#           dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
-#           arrow::write_parquet(fil_yq_)
-#       }
-#     }
   }
   DBI::dbDisconnect(con_)
   invisible(gc())
