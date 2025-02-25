@@ -422,11 +422,11 @@ create_error_table <- function(.source = c("DocumentLinks", "LandingPage")) {
 
 
 if (FALSE) {
-  .dir = fs::dir_create("../_package_debug/rGetEDGAR")
-  .tab = NULL
-  .source = "LandingPage" # c("DocumentLinks", "LandingPage"),
-  .target = "parquet" #c("sqlite", "parquet"),
-  .verbose = TRUE
+  .dir <- fs::dir_create("../_package_debug/rGetEDGAR")
+  .tab <- NULL
+  .source <- "DocumentLinks" # c("DocumentLinks", "LandingPage"),
+  .target <- "parquet" # c("sqlite", "parquet"),
+  .verbose <- TRUE
 }
 
 #' Write SEC EDGAR Link Data to Different Storage Formats
@@ -477,36 +477,71 @@ write_link_data <- function(
   if (.target == "sqlite") {
     DBI::dbWriteTable(con_, params_$table_name, .tab, append = TRUE)
   } else {
+
     query_dis_ <- paste("SELECT DISTINCT YearQuarter FROM", table_)
-    yq_ <- sort(dplyr::pull(DBI::dbGetQuery(con_, query_dis_), YearQuarter))
+    combs_ <- tibble::tibble(
+      YearQuarter = sort(dplyr::pull(DBI::dbGetQuery(con_, query_dis_), YearQuarter))
+    ) %>%
+      dplyr::mutate(
+        nam_out = paste0(.source, "_", gsub("\\.", "-", YearQuarter)),
+        fil_out = file.path(params_$DirParquet, paste0(nam_out, ".parquet"))
+      )
 
-    for (i in seq_len(length(yq_))) {
-      use_yq_ <- yq_[i]
-      nam_yq_ <- paste0(.source, "_", gsub("\\.", "-", use_yq_), ".parquet")
-      fil_yq_ <- file.path(params_$DirParquet, nam_yq_)
-      msg_yq_ <- paste0("Saving Data: ", .source, ": ", use_yq_)
-      print_verbose(msg_yq_, .verbose, .line = "\r")
-
-      if (.source == "DocumentLinks") {
-        dplyr::tbl(con_, params_$table_name) %>%
-          dplyr::filter(YearQuarter == use_yq_) %>%
+    if (.source == "DocumentLinks") {
+      tbl_ <- dplyr::tbl(con_, params_$table_name)
+      purrr::map2(
+        .x = combs_$YearQuarter,
+        .y = combs_$fil_out,
+        .f = ~ tbl_ %>%
+          dplyr::filter(YearQuarter == .x) %>%
           dplyr::mutate(DocID = paste0(CIK, "-", HashDocument), .after = HashIndex) %>%
           dplyr::filter(Error == 0) %>%
           dplyr::collect() %>%
           dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
-          arrow::write_parquet(fil_yq_)
-      } else {
-        dplyr::tbl(con_,table_) %>%
-          dplyr::filter(YearQuarter == use_yq_) %>%
+          arrow::write_parquet(.y),
+        .progress = .verbose
+      )
+    } else {
+      tbl_ <- dplyr::tbl(con_, params_$table_name)
+      purrr::map2(
+        .x = combs_$YearQuarter,
+        .y = combs_$fil_out,
+        .f = ~ tbl_ %>%
+          dplyr::filter(YearQuarter == .x) %>%
           dplyr::filter(Error == 0) %>%
           dplyr::collect() %>%
           dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
-          arrow::write_parquet(fil_yq_)
-      }
-
-
+          arrow::write_parquet(.y),
+        .progress = .verbose
+      )
     }
+#
+#     for (i in seq_len(length(yq_))) {
+#       use_yq_ <- yq_[i]
+#       nam_yq_ <- paste0(.source, "_", gsub("\\.", "-", use_yq_), ".parquet")
+#       fil_yq_ <- file.path(params_$DirParquet, nam_yq_)
+#       msg_yq_ <- paste0("Saving Data: ", .source, ": ", use_yq_)
+#       print_verbose(msg_yq_, .verbose, .line = "\r")
+#
+#       if (.source == "DocumentLinks") {
+#         dplyr::tbl(con_, params_$table_name) %>%
+#           dplyr::filter(YearQuarter == use_yq_) %>%
+#           dplyr::mutate(DocID = paste0(CIK, "-", HashDocument), .after = HashIndex) %>%
+#           dplyr::filter(Error == 0) %>%
+#           dplyr::collect() %>%
+#           dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
+#           arrow::write_parquet(fil_yq_)
+#       } else {
+#         dplyr::tbl(con_, table_) %>%
+#           dplyr::filter(YearQuarter == use_yq_) %>%
+#           dplyr::filter(Error == 0) %>%
+#           dplyr::collect() %>%
+#           dplyr::distinct(!!!dplyr::syms(params_$distinct_cols), .keep_all = TRUE) %>%
+#           arrow::write_parquet(fil_yq_)
+#       }
+#     }
   }
+  DBI::dbDisconnect(con_)
   invisible(gc())
 }
 

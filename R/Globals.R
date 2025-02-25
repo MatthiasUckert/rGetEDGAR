@@ -32,5 +32,5 @@ utils::globalVariables(c(
   "DocumentLinks", "MasterIndex",
 
   # Text Processing Variables
-  "text", "Filename", "PathTmp"
+  "text", "Filename", "PathTmp", "nam_out"
 ))
