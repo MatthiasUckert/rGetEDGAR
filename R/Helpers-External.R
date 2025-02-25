@@ -291,6 +291,9 @@ standardize_text <- function(.str, .options = standardize_options()) {
 
   return(str_)
 }
+
+
+
 #' Create HTML reading options
 #'
 #' @param .recover Logical; should parser try to recover from errors? (default: TRUE)
