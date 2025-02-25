@@ -196,18 +196,13 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       msg_time_ <- format_time(init_time_, j, nrow(use_))
       print_verbose(paste(msg_loop_, msg_time_, wait_info_$msg, sep = " | "), .verbose, "\r")
 
+      # Sys.sleep(60)
       # .index_row <- split(use_$data[[j]], use_$data[[j]]$HashIndex)[[1]]
-      lst_ <- try(R.utils::withTimeout(
-        expr = furrr::future_map(
-          .x = split(use_$data[[j]], use_$data[[j]]$HashIndex),
-          .f = ~ help_get_document_link(.index_row = .x, .user),
-          .options = furrr::furrr_options(seed = TRUE)
-        ) %>%
-          purrr::transpose() %>%
-          purrr::map(~ dplyr::bind_rows(.x, , .id = "HashIndex")),
-        timeout = 30,
-        onTimeout = "error"
-      ), silent = TRUE)
+      lst_ <- try(purrr::transpose(furrr::future_map(
+        .x = split(use_$data[[j]], use_$data[[j]]$HashIndex),
+        .f = ~ help_get_document_link(.index_row = .x, .user),
+        .options = furrr::furrr_options(seed = TRUE)
+      )), silent = TRUE)
 
       if (inherits(lst_, "try-error")) {
         print_verbose("Some error occurred, no worries we are continuing :) ...", .verbose, "\r")
@@ -215,8 +210,16 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
         next
       }
 
-      out_links_ <- finalize_tables(lst_$DocumentLinks, use_$data[[j]], "DocumentLinks")
-      out_htmls_ <- finalize_tables(lst_$LangingPage, use_$data[[j]], "LangingPage")
+      out_links_ <- finalize_tables(
+        .tab = dplyr::bind_rows(lst_$DocumentLinks, .id = "HashIndex"),
+        .join = use_$data[[j]],
+        .type = "DocumentLinks"
+      )
+      out_htmls_ <- finalize_tables(
+        .tab = dplyr::bind_rows(lst_$LangingPage, .id = "HashIndex"),
+        .join = use_$data[[j]],
+        .type = "LangingPage"
+      )
 
       if (inherits(out_links_, "try-error") | inherits(out_htmls_, "try-error")) {
         print_verbose("Some error occurred, no worries we are continuing :) ...", .verbose, "\r")

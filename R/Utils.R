@@ -288,3 +288,8 @@ if (FALSE) {
 
 
 
+showHtml <- function(.html) {
+  tmp_ <- tempfile(fileext = ".html")
+  write(.html, tmp_)
+  utils::browseURL(tmp_)
+}

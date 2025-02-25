@@ -680,7 +680,7 @@ help_get_document_link <- function(.index_row, .user) {
   }
 
   # utils_showHtml(content_)
-
+  #contentDiv > div:nth-child(2)
   nodes_ <- rvest::read_html(content_) %>%
     rvest::html_elements(css = "#formDiv") %>%
     rvest::html_elements("table")
