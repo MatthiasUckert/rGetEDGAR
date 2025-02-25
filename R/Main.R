@@ -162,7 +162,11 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
   # Initialize Databases and Saving Results
   vec_ <- c("DocumentLinks", "LandingPage")
   purrr::walk(vec_, ~ initialize_edgar_database(.dir, .x))
-  purrr::walk(vec_, ~ write_link_data(.dir, NULL, .x, "parquet", .verbose))
+  print_verbose("\nUpdating DocumentLinks", .verbose, "\n")
+  write_link_data(.dir, NULL, "DocumentLinks", "parquet", .verbose)
+
+  print_verbose("\nUpdating LandingPage", .verbose, "\n")
+  write_link_data(.dir, NULL, "LandingPage", "parquet", .verbose)
   invisible(gc())
 
   tab_fils_ <- list_data(.dir)
@@ -206,8 +210,8 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       ), silent = TRUE)
 
       if (inherits(lst_, "try-error")) {
-        Sys.sleep(60)
         print_verbose("Some error occurred, no worries we are continuing :) ...", .verbose, "\r")
+        Sys.sleep(60)
         next
       }
 
@@ -215,8 +219,8 @@ edgar_get_document_links <- function(.dir, .user, .from = NULL, .to = NULL, .cik
       out_htmls_ <- finalize_tables(lst_$LangingPage, use_$data[[j]], "LangingPage")
 
       if (inherits(out_links_, "try-error") | inherits(out_htmls_, "try-error")) {
-        Sys.sleep(60)
         print_verbose("Some error occurred, no worries we are continuing :) ...", .verbose, "\r")
+        Sys.sleep(60)
         next
       }
 
