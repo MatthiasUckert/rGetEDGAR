@@ -336,11 +336,12 @@ edgar_download_document <- function(.dir, .user, .from = NULL, .to = NULL, .ciks
     t0_start_ <- Sys.time() # Overall start time for ETA
     print_verbose("", .verbose, "\n")
     for (j in seq_along(lst_url_)) {
+
       t0_loop_ <- Sys.time()
       furrr::future_walk2(
         .x = lst_url_[[j]],
         .y = lst_out_[[j]],
-        .f = ~ help_download_url_request(.x, .user, .y),
+        .f = ~ help_download_url_request(.url = .x, .user, .path_out = .y),
         .progress = FALSE,
         .options = furrr::furrr_options(seed = TRUE)
       )
@@ -610,12 +611,12 @@ if (FALSE) {
     .ciks = NULL,
     .formtypes = forms,
     .doctypes = c("Exhibit 10"),
-    .workers = 10L,
+    .workers = 5L,
     .verbose = TRUE
   )
 
   tab_ex10 <- dplyr::filter(Table_DocTypesRaw, DocTypeMod == "Exhibit 10")
-  scales::comma(sum(ex10$nDocs))
+  scales::comma(sum(tab_ex10$nDocs))
   ids_ex10 <- arrow::open_dataset(lp_$DocumentLinks$Parquet) %>%
     dplyr::filter(Type %in% tab_ex10$DocTypeRaw) %>%
     dplyr::distinct(DocID) %>%
@@ -625,48 +626,9 @@ if (FALSE) {
 
   edgar_parse_documents(
     .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .workers = 10L,
+    .workers = 5L,
     .doc_ids = ids_ex10,
     .verbose = TRUE
-  )
-
-
-
-  dir_src <- "/Users/matthiasuckert/Dropbox/_share_data/rGetEDGAR/DocumentData/Original"
-  dir_out <- "/Users/matthiasuckert/RProjects/Packages/_package_debug/rGetEDGAR/DocumentData/Original"
-  lft_ <- rUtils::lft(dir_src) %>%
-    dplyr::mutate(path_out = file.path(dir_out, basename(path))) %>%
-    dplyr::select(path_src = path, path_out) %>%
-    dplyr::filter(!file.exists(path_out))
-
-  file.copy(lft_$path_src, lft_$path_out)
-
-  doc_ids <- arrow::open_dataset("E:/Uckert/Dropbox/_share_data/LinkData.parquet") %>%
-    dplyr::select(DocID) %>%
-    dplyr::collect() %>%
-    dplyr::pull()
-
-
-
-
-
-  tab_master <- edgar_read_master_index(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .from = NULL,
-    .to = NULL,
-    .ciks = NULL,
-    .formtypes = forms,
-    .collect = TRUE
-  )
-
-  tab_docs <- edgar_read_document_links(
-    .dir = fs::dir_create("../_package_debug/rGetEDGAR"),
-    .from = NULL,
-    .to = NULL,
-    .ciks = NULL,
-    .formtypes = forms,
-    .doctypes = NULL,
-    .collect = TRUE
   )
 }
 
