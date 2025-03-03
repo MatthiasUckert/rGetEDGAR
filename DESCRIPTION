@@ -2,14 +2,21 @@ Package: rGetEDGAR
 Title: Efficient Parallel Downloading and Processing of SEC EDGAR Filings
 Version: 0.1.0
 Authors@R: 
-    person("Matthias", "Uckert", , "Matthias.Uckert@outlook.com", role = c("aut", "cre"))
-Description: Provides tools for downloading and processing SEC EDGAR filings with a focus 
-    on performance and reliability. Features include parallel downloading of master indices 
-    and document links, rate-limited requests respecting SEC guidelines, robust error handling, 
-    and efficient storage in both SQLite and Parquet formats. The package supports incremental 
-    updates, automated backups, and offers a flexible filtering system for targeting specific 
-    companies, document types, and time periods.
+    person("Matthias", "Uckert", , "Matthias.Uckert@outlook.com", role = c("aut", "cre"),
+           comment = c(ORCID = ""))
+Description: Provides tools for downloading and processing SEC EDGAR (Electronic Data 
+    Gathering, Analysis, and Retrieval) filings with a focus on performance and reliability. 
+    The package implements a complete pipeline for accessing financial regulatory documents,
+    including master indices retrieval, document link extraction, file downloading, and text
+    parsing. Features include parallel processing to optimize download times, rate-limited
+    requests that strictly adhere to SEC guidelines (10 requests/second), robust error
+    handling with detailed logging, and efficient storage in both SQLite and Parquet formats.
+    Supports incremental updates to avoid redundant downloads, offers comprehensive filtering
+    options for targeting specific companies, document types, and time periods, and includes
+    utilities for standardizing and processing filing text content.
 License: MIT + file LICENSE
+URL: https://github.com/MatthiasUckert/rGetEDGAR
+BugReports: https://github.com/MatthiasUckert/rGetEDGAR/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
@@ -28,6 +35,7 @@ Imports:
     purrr,
     RSQLite,
     rvest,
+    scales,
     stringi,
     tibble,
     tidyr,
@@ -35,3 +43,7 @@ Imports:
 Depends: 
     R (>= 3.5)
 LazyData: true
+Suggests:
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0)

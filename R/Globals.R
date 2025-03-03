@@ -1,36 +1,40 @@
 utils::globalVariables(c(
-  # Index and Identification Variables
-  "CIK", "Cik", "HashIndex", "HashDocument", "ID", "DocID", "doc_id",
+  # content_to_dataframe
+  "text", "Filename", "Cik", "UrlFullText", "CIK", "DateFiled",
+  "UrlIndexPage", "HashIndex", "Year", "Quarter", "YearQuarter",
 
-  # Date and Period Variables
+  # edgar_download_document
+  "dir_tmp", "dir_out", "YearQuarter", "DocType", "Seq", "DocID", "UrlDocument",
+
+  # edgar_get_document_links
+  "YearQuarter", "Seq", "UrlIndexPage", "HashIndex", "CIK", "HTML", "DocID",
+
+  # edgar_get_master_index
+  "UrlMasterIndex", "Year", "Quarter", "YearQtrSave", "PathOut",
+
+  # edgar_parse_documents
+  "filename", "DocID", "PathZIP", "dir_out", "FileExt",
+
+  # get_doclinks
+  "UrlDocument", "Seq", "HashDocument", "CIK", "Size", "Description",
+  "Document", "Type", "HashIndex", "DocID", "YearQuarter",
+
+  # get_edgar_params
+  "DocTypeMod",
+
+  # get_tbp_docids
+  "filename", "DocID", "UrlDocument", "DocExt", "DocTypeRaw", "DocTypeMod",
+  "YearQuarter", "TypeSave", "YqSave", "CIK", "Seq", "dir_tmp", "dir_out", "DocType",
+
+  # get_tbp_hashindex
+  "HashIndex", "YearQuarter", "CIK", "Seq", "UrlIndexPage",
+
+  # get_year_qtr_table
   "Year", "Quarter", "YearQuarter",
 
-  # Document Type and Classification Variables
-  "Type", "FormType", "DocClass", "DocTypeRaw", "DocTypeMod",
+  # list_files
+  "path", "doc_id",
 
-  # File and Path Variables
-  "path", "PathOut", "PathZIP", "DirTMP", "DirOut",
-  "FileZIP", "filename", "DocFile", "Ext", "FileExt", "OutExt",
-
-  # Document Content Variables
-  "HTML", "TextRaw", "TextMod",
-  "nWords", "nChars",
-
-  # URL Variables
-  "UrlMasterIndex", "UrlFullText", "UrlIndexPage", "UrlDocument",
-
-  # Document Metadata Variables
-  "Seq", "Description", "Document", "Size",
-  "DateFiled",
-
-  # Processing Status Variables
-  "Error", "Split", "Print", "data",
-  "AllRow", "AllTot", "AllPer",
-  "DocNum", "nDocs", "ext",
-
-  # Dataset Type Variables
-  "DocumentLinks", "MasterIndex",
-
-  # Text Processing Variables
-  "text", "Filename", "PathTmp", "nam_out"
+  # parse_files
+  "HTML", "TextRaw", "TextMod"
 ))
