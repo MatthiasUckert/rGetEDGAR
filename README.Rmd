@@ -1,49 +1,39 @@
+---
+output: github_document
+---
 
-# rGetEDGAR
+
+# rGetEDGAR 
 
 <!-- badges: start -->
 
-[<img src="https://img.shields.io/badge/lifecycle-stable-brightgreen.svg"
-alt="Lifecycle: stable" />](https://lifecycle.r-lib.org/articles/stages.html#stable)
-[<img src="https://www.r-pkg.org/badges/version/rGetEDGAR"
-alt="CRAN status" />](https://cran.r-project.org/package=rGetEDGAR)
+[![Lifecycle: stable](https://img.shields.io/badge/lifecycle-stable-brightgreen.svg){alt="Lifecycle: stable"}](https://lifecycle.r-lib.org/articles/stages.html#stable) [![CRAN status](https://www.r-pkg.org/badges/version/rGetEDGAR){alt="CRAN status"}](https://cran.r-project.org/package=rGetEDGAR)
 
 <!-- badges: end -->
 
 ## Overview
 
-rGetEDGAR provides tools for downloading, processing, and analyzing SEC
-EDGAR filings in R. Built for both researchers and practitioners, the
-package offers efficient parallel processing, smart rate limiting that
-respects SEC guidelines, comprehensive error handling, and optimized
-storage formats.
+rGetEDGAR provides tools for downloading, processing, and analyzing SEC EDGAR filings in R. Built for both researchers and practitioners, the package offers efficient parallel processing, smart rate limiting that respects SEC guidelines, comprehensive error handling, and optimized storage formats.
 
 ### Key Features
 
-- **Complete Pipeline**: Download master indices, document links, and
-  actual filing documents
+-   **Complete Pipeline**: Download master indices, document links, and actual filing documents
 
-- **Parallel Processing**: Significantly reduce download times with
-  multi-core capabilities
+-   **Parallel Processing**: Significantly reduce download times with multi-core capabilities
 
-- **Smart Rate Limiting**: Automatically adheres to SEC’s 10
-  requests/second guidelines
+-   **Smart Rate Limiting**: Automatically adheres to SEC's 10 requests/second guidelines
 
-- **Hybrid Storage**: Uses both SQLite (for queries) and Parquet (for
-  analytics) formats
+-   **Hybrid Storage**: Uses both SQLite (for queries) and Parquet (for analytics) formats
 
-- **Robust Error Handling**: Gracefully manages network issues and
-  malformed content
+-   **Robust Error Handling**: Gracefully manages network issues and malformed content
 
-- **Flexible Filtering**: Filter by company, form type, document type,
-  and time period
+-   **Flexible Filtering**: Filter by company, form type, document type, and time period
 
-- **Incremental Updates**: Only download new filings to save bandwidth
-  and storage
+-   **Incremental Updates**: Only download new filings to save bandwidth and storage
 
 ## Installation
 
-``` r
+```{r eval=FALSE}
 # From CRAN (once available)
 # install.packages("rGetEDGAR")
 
@@ -60,7 +50,7 @@ pak::pak("MatthiasUckert/rGetEDGAR")
 
 Basic Workflow
 
-``` r
+```{r eval=FALSE}
 library(rGetEDGAR)
 
 # 1. Create data directory
@@ -103,20 +93,17 @@ edgar_parse_documents(
 
 ### Package Architecture
 
-rGetEDGAR follows a staged approach to downloading and processing SEC
-EDGAR data:
+rGetEDGAR follows a staged approach to downloading and processing SEC EDGAR data:
 
-1.  **Master Index** → 2. **Document Links** → 3. **Document Download**
-    → 4. **Document Parsing**
+1.  **Master Index** → 2. **Document Links** → 3. **Document Download** → 4. **Document Parsing**
 
-Each stage builds on the previous one, creating a complete pipeline for
-working with SEC filings.
+Each stage builds on the previous one, creating a complete pipeline for working with SEC filings.
 
 ### Function Reference
 
 #### Stage 1: Master Index
 
-``` r
+```{r eval=FALSE}
 edgar_get_master_index(
   .dir,        # Directory to store data
   .user,       # Your email address
@@ -126,12 +113,11 @@ edgar_get_master_index(
 )
 ```
 
-Downloads and processes the SEC EDGAR master index files, which contain
-metadata about all filings submitted to the EDGAR system.
+Downloads and processes the SEC EDGAR master index files, which contain metadata about all filings submitted to the EDGAR system.
 
 #### Stage 2: Document Links
 
-``` r
+```{r eval=FALSE}
 edgar_get_document_links(
   .dir,       # Directory where data is stored
   .user,      # Your email address
@@ -141,12 +127,11 @@ edgar_get_document_links(
 )
 ```
 
-Downloads and processes document links from filing index pages,
-extracting metadata such as document descriptions, types, and URLs.
+Downloads and processes document links from filing index pages, extracting metadata such as document descriptions, types, and URLs.
 
 #### Stage 3: Document Download
 
-``` r
+```{r eval=FALSE}
 edgar_download_document(
   .dir,        # Directory where data is stored
   .user,       # Your email address
@@ -156,13 +141,11 @@ edgar_download_document(
 )
 ```
 
-Downloads actual document files from SEC EDGAR filings, handling
-different formats and organizing them into a structured directory
-layout.
+Downloads actual document files from SEC EDGAR filings, handling different formats and organizing them into a structured directory layout.
 
 #### Stage 4: Document Parsing
 
-``` r
+```{r eval=FALSE}
 edgar_parse_documents(
   .dir,        # Directory where data is stored
   .doc_ids = NULL,
@@ -171,15 +154,13 @@ edgar_parse_documents(
 )
 ```
 
-Processes downloaded documents by extracting text content, standardizing
-the text, and storing the results in a structured format for analysis.
+Processes downloaded documents by extracting text content, standardizing the text, and storing the results in a structured format for analysis.
 
 ### Utility Functions
 
-The package includes several utility functions to help with data
-management and processing:
+The package includes several utility functions to help with data management and processing:
 
-``` r
+```{r eval=FALSE}
 # Set up directory structure
 get_directories(.dir)
 
@@ -197,10 +178,9 @@ show_html(.html)
 
 ### Filtering by Company
 
-To download filings for specific companies, you need their Central Index
-Key (CIK):
+To download filings for specific companies, you need their Central Index Key (CIK):
 
-``` r
+```{r eval=FALSE}
 # Example: Download Apple Inc. (0000320193) and Tesla Inc. (0001318605) filings
 edgar_get_document_links(
   .dir = data_dir,
@@ -214,7 +194,7 @@ edgar_get_document_links(
 
 To download specific form types (e.g., 10-K, 10-Q, 8-K):
 
-``` r
+```{r eval=FALSE}
 # First, get the HashIndex values for 10-K filings
 cik_apple <- "0000320193"  # Apple Inc.
 form_10k <- "10-K"
@@ -239,7 +219,7 @@ edgar_get_document_links(
 
 For faster downloads, increase the number of workers:
 
-``` r
+```{r eval=FALSE}
 # Use 8 cores for parallel processing
 edgar_download_document(
   .dir = data_dir,
@@ -249,65 +229,50 @@ edgar_download_document(
 )
 ```
 
-Note: Be mindful of SEC’s rate limits (10 requests per second) when
-increasing worker count.
+Note: Be mindful of SEC's rate limits (10 requests per second) when increasing worker count.
 
 ### Storage Considerations
 
-Downloaded data can grow quite large, especially when downloading
-multiple years of filings. The package uses a combination of Parquet
-files (for efficient storage and analytics) and SQLite databases (for
-queries during processing).
+Downloaded data can grow quite large, especially when downloading multiple years of filings. The package uses a combination of Parquet files (for efficient storage and analytics) and SQLite databases (for queries during processing).
 
 For a full index of all SEC filings from 1993 to present, expect to use:
 
-- Master Index: ~2-3 GB
-- Document Links: ~20-30 GB
-- Raw Documents: Highly variable, can range from hundreds of GB to
-  several TB depending on filtering
+-   Master Index: \~2-3 GB
+-   Document Links: \~20-30 GB
+-   Raw Documents: Highly variable, can range from hundreds of GB to several TB depending on filtering
 
 ## SEC EDGAR Access Guidelines
 
-When using rGetEDGAR, please comply with SEC’s EDGAR access
-requirements:
+When using rGetEDGAR, please comply with SEC's EDGAR access requirements:
 
-1.  **Identify Yourself**: Always provide a legitimate email address in
-    the `.user` parameter
-2.  **Limit Requests**: The package automatically limits to 10 requests
-    per second
-3.  **Proper Use**: Use the data for legitimate research or analysis
-    purposes
-4.  **No Redistribution**: Do not redistribute bulk SEC EDGAR data
-    commercially
+1.  **Identify Yourself**: Always provide a legitimate email address in the `.user` parameter
+2.  **Limit Requests**: The package automatically limits to 10 requests per second
+3.  **Proper Use**: Use the data for legitimate research or analysis purposes
+4.  **No Redistribution**: Do not redistribute bulk SEC EDGAR data commercially
 
-For full guidelines, see: [SEC’s EDGAR Public Dissemination Service
-Policies](https://www.sec.gov/developer)
+For full guidelines, see: [SEC's EDGAR Public Dissemination Service Policies](https://www.sec.gov/developer)
 
 ## Troubleshooting
 
 ### Common Issues
 
-**Error: Connection timed out** - The SEC may be blocking your requests
-due to rate limiting - Solution: Reduce the number of workers or wait
-before trying again
+**Error: Connection timed out** - The SEC may be blocking your requests due to rate limiting - Solution: Reduce the number of workers or wait before trying again
 
-**Error: Cannot write Parquet file** - You may not have write
-permissions for the directory - Solution: Check directory permissions or
-use a different location
+**Error: Cannot write Parquet file** - You may not have write permissions for the directory - Solution: Check directory permissions or use a different location
 
 **Warning: No new files to download**
 
-- All requested files have already been downloaded
-- This is normal behavior for incremental updates
+-   All requested files have already been downloaded
+-   This is normal behavior for incremental updates
 
 ### Logging
 
 The package maintains several log files in the data directory:
 
-- `LogMasterIndex.csv`: Logs master index download operations
-- `LogDocLinks.csv`: Logs document link download operations
-- `LogDocDataOriginal.csv`: Logs document download operations
-- `LogDocDataParsed.csv`: Logs document parsing operations
+-   `LogMasterIndex.csv`: Logs master index download operations
+-   `LogDocLinks.csv`: Logs document link download operations
+-   `LogDocDataOriginal.csv`: Logs document download operations
+-   `LogDocDataParsed.csv`: Logs document parsing operations
 
 Check these logs for detailed information about any issues.
 
@@ -331,11 +296,10 @@ Contributions to rGetEDGAR are welcome! Please follow these steps:
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file
-for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Citation
 
 If you use rGetEDGAR in your research, please cite it:
 
-…
+...
