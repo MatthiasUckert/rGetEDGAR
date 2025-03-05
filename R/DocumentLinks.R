@@ -69,18 +69,19 @@ edgar_get_document_links <- function(.dir, .user, .hash_idx, .workers = 1L, .ver
       use_ <- dplyr::tbl(con_prcs_, "tobeprocessed") %>%
         dplyr::filter(YearQuarter == yq0_, Seq == j) %>%
         dplyr::collect() %>%
-        dplyr::mutate(UrlIndexPage = purrr::set_names(UrlIndexPage, HashIndex))
+        dplyr::mutate(UrlIndexPage = purrr::set_names(UrlIndexPage, HashIndex)) %>%
+        dplyr::distinct()
 
       tab_htmls_ <- dplyr::bind_rows(furrr::future_map(
         .x = use_$UrlIndexPage,
-        .f = ~ get_landing_html(.x, .user)
+        .f = ~ get_landing_html(.x, .user, .verbose, plog_)
       ), .id = "HashIndex") %>%
         dplyr::left_join(dplyr::select(use_, CIK, YearQuarter, HashIndex), by = "HashIndex") %>%
         dplyr::select(HashIndex, CIK, YearQuarter, HTML)
 
       tab_links_ <- dplyr::bind_rows(purrr::map(
         .x = split(tab_htmls_, tab_htmls_$HashIndex),
-        .f = get_doclinks
+        .f = ~ get_doclinks(.x, plog_)
       ))
 
       DBI::dbWriteTable(con_sqlite_, "DocHTMLs", tab_htmls_, append = TRUE)
@@ -438,8 +439,8 @@ get_doclinks <- function(.tab_row, .path_log) {
 
 # DeBug ---------------------------------------------------------------------------------------
 if (FALSE) {
-  devtools::load_all(".")
-  # library(rGetEDGAR)
+  # devtools::load_all(".")
+  library(rGetEDGAR)
   forms <- c(
     "10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A",
     "S-1", "S-1/A", "S-4", "S-4/A", "F-1", "F-1/A", "F-4", "F-4/A",
@@ -454,26 +455,19 @@ if (FALSE) {
   dir_debug <- fs::dir_create("../_package_debug/rGetEDGAR")
   lp_ <- get_directories(dir_debug)
 
-  .hash_idx <- arrow::open_dataset(lp_$MasterIndex$DirParquet) %>%
-    dplyr::filter(FormType %in% "10-K") %>%
-    dplyr::distinct(HashIndex) %>%
-    dplyr::collect() %>%
-    dplyr::pull()
+  for (f in forms) {
+    .hash_idx <- arrow::open_dataset(lp_$MasterIndex$DirParquet) %>%
+      dplyr::filter(FormType %in% f) %>%
+      dplyr::distinct(HashIndex) %>%
+      dplyr::collect() %>%
+      dplyr::pull()
 
-  .dir <- dir_debug
-  .user <- user
-  .hash_idx <- .hash_idx
-  .workers <- 10L
-  .verbose <- TRUE
-
-
-  edgar_get_document_links(
-    .dir = dir_debug,
-    .user = user,
-    .hash_idx = .hash_idx,
-    .workers = 5L,
-    .verbose = TRUE
-  )
-
-
+    edgar_get_document_links(
+      .dir = dir_debug,
+      .user = user,
+      .hash_idx = .hash_idx,
+      .workers = 10L,
+      .verbose = TRUE
+    )
+  }
 }
