@@ -40,37 +40,37 @@
 #' @export
 edgar_get_document_links <- function(.dir, .user, .hash_idx, .workers = 1L, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
+  dir_htmls_ <- lp_$DocLinks$DirMain$HTMLs
+  dir_links_ <- lp_$DocLinks$DirMain$Links
+  dir_sqlite_ <- lp_$DocLinks$DirTemp$DirSqlite
   plog_ <- lp_$DocLinks$FilLog
-  seq_ <- get_tbp_hashindex(.dir, .hash_idx, .workers)
+  vec_tbp_ <- get_tbp_hashindex(.dir, .hash_idx, .workers, .verbose)
 
-  error_logging(plog_, "INFO", paste0("Starting Download (nDocs: ", sum(lengths(seq_) * .workers), ")"))
-
-  con_prcs_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$DocLinks$DirTemp$FilToBePrc)
+  ndocs_ <- scales::comma(sum(lengths(vec_tbp_) * .workers))
+  msg_log_ <- paste0("Starting Download (nDocs: ", ndocs_, ")")
+  print_verbose(msg_log_, .verbose, .line = "\n")
+  error_logging(plog_, "INFO", msg_log_)
 
   future::plan("multisession", workers = .workers)
-  for (i in seq_along(seq_)) {
-    yq0_ <- names(seq_)[i]
-    yq1_ <- gsub(".", "-", yq0_, fixed = TRUE)
-    tot_ <- max(seq_[[i]])
+  for (i in seq_along(vec_tbp_)) {
+    tab_tbp_ <- dplyr::distinct(arrow::read_parquet(vec_tbp_[i], mmap = FALSE))
+    year_qtr_ <- tab_tbp_$YearQtrSave[1]
+    form_typ_ <- tab_tbp_$FormType[1]
+    path_htmls_ <- file.path(dir_htmls_, paste0("DocHTMLs_", year_qtr_, ".parquet"))
+    path_links_ <- file.path(dir_links_, paste0("DocLinks_", year_qtr_, ".parquet"))
+    path_sqlite_ <- file.path(dir_sqlite_, paste0(year_qtr_, ".sqlite"))
 
-    path_htmls_ <- file.path(lp_$DocLinks$DirMain$HTMLs, paste0("DocHTMLs_", yq1_, ".parquet"))
-    path_links_ <- file.path(lp_$DocLinks$DirMain$Links, paste0("DocLinks_", yq1_, ".parquet"))
-
-    path_sqlite_ <- file.path(lp_$DocLinks$DirTemp$DirSqlite, paste0(yq1_, ".sqlite"))
     try(fs::file_delete(path_sqlite_), silent = TRUE)
     inidb_get_doclinks(path_sqlite_)
     con_sqlite_ <- DBI::dbConnect(RSQLite::SQLite(), path_sqlite_)
 
-    for (j in seq_[[i]]) {
+    for (j in unique(tab_tbp_$Seq)) {
       t0_ <- Sys.time()
+      msg_loop_ <- paste0(year_qtr_, ": ", form_typ_)
+      print_doclinks_loop(msg_loop_, j, length(unique(tab_tbp_$Seq)), .workers, .verbose)
 
-      print_doclinks_loop(yq1_, j, tot_, .workers, .verbose)
-
-      use_ <- dplyr::tbl(con_prcs_, "tobeprocessed") %>%
-        dplyr::filter(YearQuarter == yq0_, Seq == j) %>%
-        dplyr::collect() %>%
-        dplyr::mutate(UrlIndexPage = purrr::set_names(UrlIndexPage, HashIndex)) %>%
-        dplyr::distinct()
+      use_ <- dplyr::filter(tab_tbp_, Seq == j)
+      use_ <- dplyr::mutate(use_, UrlIndexPage = purrr::set_names(UrlIndexPage, HashIndex))
 
       tab_htmls_ <- dplyr::bind_rows(furrr::future_map(
         .x = use_$UrlIndexPage,
@@ -115,17 +115,92 @@ edgar_get_document_links <- function(.dir, .user, .hash_idx, .workers = 1L, .ver
     DBI::dbDisconnect(con_sqlite_)
     try(fs::file_delete(path_sqlite_), silent = TRUE)
 
-    msg_out_ <- paste0("Downloaded Year-Quarter: ", yq1_)
+    msg_out_ <- paste0("Downloaded Year-Quarter: ", year_qtr_)
     det_out_ <- paste0("Rows: ", nrow(out_htmls_))
     error_logging(plog_, "INFO", msg_out_, det_out_)
-  }
 
-  DBI::dbDisconnect(con_prcs_)
-  try(fs::file_delete(lp_$DocLinks$DirTemp$FilToBePrc), silent = TRUE)
+  }
   future::plan("default")
+
 }
 
 # Helper Functions ----------------------------------------------------------------------------
+#' Prepare "To Be Processed" HashIndex Queue
+#'
+#' @description
+#' Prepares a queuing system for SEC EDGAR document links to be processed in batches.
+#' This function creates a temporary SQLite database to track which filing index pages
+#' need to be processed and assigns them to processing batches.
+#'
+#' @param .dir
+#' Character string specifying the directory where the downloaded data will be stored.
+#' This directory should contain the necessary sub directory structure.
+#' @param .hash_idx
+#' Character vector of HashIndex values to process. If NULL, all available index entries
+#' will be processed.
+#' @param .workers
+#' Integer specifying the number of parallel workers for downloading. Defaults to 1.
+#' Higher values increase download speed but also increase server load.
+#' @param .verbose
+#' Logical indicating whether to print progress messages to the console during processing.
+#' Default is TRUE.
+#'
+#' @details
+#' The created SQLite database contains a "tobeprocessed" table with the following columns:
+#' \itemize{
+#'   \item HashIndex: Unique identifier for the filing
+#'   \item CIK: Central Index Key of the filing company
+#'   \item YearQuarter: Filing year and quarter as numeric
+#'   \item Seq: Batch sequence number
+#'   \item UrlIndexPage: URL to the filing index page
+#' }
+#'
+#' @return
+#' A list where each element represents a year-quarter period and contains
+#' the sequence numbers of batches to be processed for that period.
+#'
+#' @keywords internal
+get_tbp_hashindex <- function(.dir, .hash_idx, .workers, .verbose = TRUE) {
+  lp_ <- get_directories(.dir)
+  dir_tmp_ <- fs::dir_delete(lp_$DocLinks$DirTemp$DirToBePrc)
+  lp_ <- get_directories(.dir)
+
+  print_verbose("Get Unprocessed HashIndex", .verbose, .line = "\n")
+  arr_prc_ <- arrow::open_dataset(lp_$DocLinks$DirMain$Links)
+  if (nrow(arr_prc_) == 0) {
+    prc_ <- NA_character_
+  } else {
+    prc_ <- dplyr::collect(dplyr::distinct(arr_prc_, HashIndex))[["HashIndex"]]
+  }
+
+  arr_idx_ <- arrow::open_dataset(lp_$MasterIndex$DirParquet)
+  if (!is.null(.hash_idx)) {
+    arr_idx_ <- dplyr::filter(arr_idx_, HashIndex %in% .hash_idx)
+  }
+  tab_ <- dplyr::filter(arr_idx_, !HashIndex %in% prc_) %>%
+    dplyr::collect() %>%
+    dplyr::mutate(
+      YearQtrSave = gsub(".", "-", YearQuarter, fixed = TRUE),
+      FormTypeSave = gsub("\\-|\\/", "", FormType)
+    ) %>%
+    dplyr::group_by(YearQuarter, FormType) %>%
+    dplyr::mutate(
+      Seq = ceiling(dplyr::row_number() / .workers),
+      PathTmp = file.path(dir_tmp_, paste0(YearQtrSave, "_", FormTypeSave, ".parquet"))
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(
+      Seq, YearQtrSave, FormTypeSave, HashIndex, CIK, FormType,
+      YearQuarter, UrlIndexPage, PathTmp
+    )
+
+  cat("\n")
+  lst_ <- split(dplyr::select(tab_, -PathTmp), tab_$PathTmp)
+  purrr::iwalk(lst_, ~ arrow::write_parquet(.x, .y), .progress = .verbose)
+  return(unique(tab_$PathTmp))
+}
+
+
 #' Print Document Links Processing Loop Status
 #'
 #' @description
@@ -231,79 +306,6 @@ inidb_get_doclinks <- function(.path) {
   DBI::dbDisconnect(con_)
 }
 
-#' Prepare "To Be Processed" HashIndex Queue
-#'
-#' @description
-#' Prepares a queuing system for SEC EDGAR document links to be processed in batches.
-#' This function creates a temporary SQLite database to track which filing index pages
-#' need to be processed and assigns them to processing batches.
-#'
-#' @param .dir
-#' Character string specifying the directory where the downloaded data will be stored.
-#' This directory should contain the necessary sub directory structure.
-#' @param .hash_idx
-#' Character vector of HashIndex values to process. If NULL, all available index entries
-#' will be processed.
-#' @param .workers
-#' Integer specifying the number of parallel workers for downloading. Defaults to 1.
-#' Higher values increase download speed but also increase server load.
-#'
-#' @details
-#' The created SQLite database contains a "tobeprocessed" table with the following columns:
-#' \itemize{
-#'   \item HashIndex: Unique identifier for the filing
-#'   \item CIK: Central Index Key of the filing company
-#'   \item YearQuarter: Filing year and quarter as numeric
-#'   \item Seq: Batch sequence number
-#'   \item UrlIndexPage: URL to the filing index page
-#' }
-#'
-#' @return
-#' A list where each element represents a year-quarter period and contains
-#' the sequence numbers of batches to be processed for that period.
-#'
-#' @keywords internal
-get_tbp_hashindex <- function(.dir, .hash_idx, .workers) {
-  lp_ <- get_directories(.dir)
-
-  path_ <- lp_$DocLinks$DirTemp$FilToBePrc
-  table_ <- "tobeprocessed"
-  try(fs::file_delete(path_), silent = TRUE)
-
-  con_ <- DBI::dbConnect(RSQLite::SQLite(), path_)
-  query0_ <- "CREATE TABLE tobeprocessed (HashIndex TEXT, CIK TEXT, YearQuarter REAL, Seq INTEGER, UrlIndexPage TEXT)"
-  DBI::dbExecute(con_, query0_)
-  query1_ <- paste0("CREATE INDEX IF NOT EXISTS Seq", table_, " ON ", table_, "(Seq)")
-  DBI::dbExecute(con_, query1_)
-  query2_ <- paste0("CREATE INDEX IF NOT EXISTS YearQuarter", table_, " ON ", table_, "(YearQuarter)")
-  DBI::dbExecute(con_, query2_)
-
-
-  arr_prc_ <- arrow::open_dataset(lp_$DocLinks$DirMain$Links)
-  if (nrow(arr_prc_) == 0) {
-    prc_ <- NA_character_
-  } else {
-    prc_ <- dplyr::collect(dplyr::distinct(arr_prc_, HashIndex))[["HashIndex"]]
-  }
-
-  arr_idx_ <- arrow::open_dataset(lp_$MasterIndex$DirParquet)
-  if (!is.null(.hash_idx)) {
-    arr_idx_ <- dplyr::filter(arr_idx_, HashIndex %in% .hash_idx)
-  }
-  arr_idx_ <- dplyr::collect(dplyr::filter(arr_idx_, !HashIndex %in% prc_))
-
-  tab_ <- arr_idx_ %>%
-    dplyr::group_by(YearQuarter) %>%
-    dplyr::mutate(Seq = ceiling(dplyr::row_number() / .workers)) %>%
-    dplyr::ungroup() %>%
-    dplyr::select(HashIndex, CIK, YearQuarter, Seq, UrlIndexPage)
-
-  DBI::dbWriteTable(con_, table_, tab_, overwrite = TRUE)
-  DBI::dbDisconnect(con_)
-
-  out_ <- dplyr::distinct(tab_, YearQuarter, Seq)
-  split(out_$Seq, out_$YearQuarter)
-}
 
 #' Get HTML Content of SEC EDGAR Filing Index Page
 #'
@@ -455,19 +457,23 @@ if (FALSE) {
   dir_debug <- fs::dir_create("../_package_debug/rGetEDGAR")
   lp_ <- get_directories(dir_debug)
 
-  for (f in forms) {
-    .hash_idx <- arrow::open_dataset(lp_$MasterIndex$DirParquet) %>%
-      dplyr::filter(FormType %in% f) %>%
-      dplyr::distinct(HashIndex) %>%
-      dplyr::collect() %>%
-      dplyr::pull()
+  .hash_idx <- arrow::open_dataset(lp_$MasterIndex$DirParquet) %>%
+    dplyr::filter(FormType %in% forms) %>%
+    dplyr::distinct(HashIndex) %>%
+    dplyr::collect() %>%
+    dplyr::pull()
 
-    edgar_get_document_links(
-      .dir = dir_debug,
-      .user = user,
-      .hash_idx = .hash_idx,
-      .workers = 10L,
-      .verbose = TRUE
-    )
-  }
+  .dir = dir_debug
+  .user = user
+  .hash_idx = .hash_idx
+  .workers = 10L
+  .verbose = TRUE
+
+  edgar_get_document_links(
+    .dir = dir_debug,
+    .user = user,
+    .hash_idx = .hash_idx,
+    .workers = 10L,
+    .verbose = TRUE
+  )
 }

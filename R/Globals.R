@@ -27,7 +27,7 @@ utils::globalVariables(c(
   "YearQuarter", "TypeSave", "YqSave", "CIK", "Seq", "dir_tmp", "dir_out", "DocType",
 
   # get_tbp_hashindex
-  "HashIndex", "YearQuarter", "CIK", "Seq", "UrlIndexPage",
+  "HashIndex", "YearQuarter", "CIK", "Seq", "UrlIndexPage", "FormType", "FormTypeSave", "PathTmp",
 
   # get_year_qtr_table
   "Year", "Quarter", "YearQuarter",
@@ -37,4 +37,5 @@ utils::globalVariables(c(
 
   # parse_files
   "HTML", "TextRaw", "TextMod"
+
 ))

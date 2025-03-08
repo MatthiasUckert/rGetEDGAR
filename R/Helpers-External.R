@@ -25,7 +25,7 @@ get_directories <- function(.dir) {
     ),
     DocLinks = list(
       DirTemp = list(
-        FilToBePrc = file.path(dir_links_temp_, "ToBeProcessed.sqlite"),
+        DirToBePrc = fs::dir_create(file.path(dir_links_temp_, "ToBeProcessed")),
         DirSqlite = fs::dir_create(file.path(dir_links_temp_, "DataSQLite"))
       ),
       DirMain = list(
