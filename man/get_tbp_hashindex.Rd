@@ -4,7 +4,7 @@
 \alias{get_tbp_hashindex}
 \title{Prepare "To Be Processed" HashIndex Queue}
 \usage{
-get_tbp_hashindex(.dir, .hash_idx, .workers, .verbose = TRUE)
+get_tbp_hashindex(.dir, .hash_idx, .verbose = TRUE)
 }
 \arguments{
 \item{.dir}{Character string specifying the directory where the downloaded data will be stored.
@@ -12,9 +12,6 @@ This directory should contain the necessary sub directory structure.}
 
 \item{.hash_idx}{Character vector of HashIndex values to process. If NULL, all available index entries
 will be processed.}
-
-\item{.workers}{Integer specifying the number of parallel workers for downloading. Defaults to 1.
-Higher values increase download speed but also increase server load.}
 
 \item{.verbose}{Logical indicating whether to print progress messages to the console during processing.
 Default is TRUE.}

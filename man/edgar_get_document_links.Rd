@@ -4,13 +4,7 @@
 \alias{edgar_get_document_links}
 \title{Download SEC EDGAR Document Links}
 \usage{
-edgar_get_document_links(
-  .dir,
-  .user,
-  .hash_idx,
-  .workers = 1L,
-  .verbose = TRUE
-)
+edgar_get_document_links(.dir, .user, .hash_idx, .verbose = TRUE)
 }
 \arguments{
 \item{.dir}{Character string specifying the directory where the downloaded data will be stored.
@@ -21,9 +15,6 @@ This should typically be an email address to comply with SEC's fair access polic
 
 \item{.hash_idx}{Character vector of HashIndex values to process. If NULL, all available index entries
 will be processed.}
-
-\item{.workers}{Integer specifying the number of parallel workers for downloading. Defaults to 1.
-Higher values increase download speed but also increase server load.}
 
 \item{.verbose}{Logical indicating whether to print progress messages to the console during processing.
 Default is TRUE.}

@@ -15,9 +15,6 @@
 #' @param .hash_idx
 #' Character vector of HashIndex values to process. If NULL, all available index entries
 #' will be processed.
-#' @param .workers
-#' Integer specifying the number of parallel workers for downloading. Defaults to 1.
-#' Higher values increase download speed but also increase server load.
 #' @param .verbose
 #' Logical indicating whether to print progress messages to the console during processing.
 #' Default is TRUE.
@@ -38,20 +35,19 @@
 #'
 #' @return No return value, called for side effects (downloading and saving data files).
 #' @export
-edgar_get_document_links <- function(.dir, .user, .hash_idx, .workers = 1L, .verbose = TRUE) {
+edgar_get_document_links <- function(.dir, .user, .hash_idx, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
   dir_htmls_ <- lp_$DocLinks$DirMain$HTMLs
   dir_links_ <- lp_$DocLinks$DirMain$Links
   dir_sqlite_ <- lp_$DocLinks$DirTemp$DirSqlite
   plog_ <- lp_$DocLinks$FilLog
-  vec_tbp_ <- get_tbp_hashindex(.dir, .hash_idx, .workers, .verbose)
+  vec_tbp_ <- get_tbp_hashindex(.dir, .hash_idx, .verbose)
 
-  ndocs_ <- scales::comma(sum(lengths(vec_tbp_) * .workers))
+  ndocs_ <- scales::comma(sum(lengths(vec_tbp_) * 10L))
   msg_log_ <- paste0("Starting Download (nDocs: ", ndocs_, ")")
   print_verbose(msg_log_, .verbose, .line = "\n")
   error_logging(plog_, "INFO", msg_log_)
 
-  future::plan("multisession", workers = .workers)
   for (i in seq_along(vec_tbp_)) {
     tab_tbp_ <- dplyr::distinct(arrow::read_parquet(vec_tbp_[i], mmap = FALSE))
     year_qtr_ <- tab_tbp_$YearQtrSave[1]
@@ -67,15 +63,16 @@ edgar_get_document_links <- function(.dir, .user, .hash_idx, .workers = 1L, .ver
     for (j in unique(tab_tbp_$Seq)) {
       t0_ <- Sys.time()
       msg_loop_ <- paste0(year_qtr_, ": ", form_typ_)
-      print_doclinks_loop(msg_loop_, j, length(unique(tab_tbp_$Seq)), .workers, .verbose)
+      print_doclinks_loop(msg_loop_, j, length(unique(tab_tbp_$Seq)), .verbose)
 
       use_ <- dplyr::filter(tab_tbp_, Seq == j)
       use_ <- dplyr::mutate(use_, UrlIndexPage = purrr::set_names(UrlIndexPage, HashIndex))
 
-      tab_htmls_ <- dplyr::bind_rows(furrr::future_map(
+      tab_htmls_ <- purrr::map(
         .x = use_$UrlIndexPage,
         .f = ~ get_landing_html(.x, .user, .verbose, plog_)
-      ), .id = "HashIndex") %>%
+      ) %>%
+        dplyr::bind_rows(.id = "HashIndex") %>%
         dplyr::left_join(dplyr::select(use_, CIK, YearQuarter, HashIndex), by = "HashIndex") %>%
         dplyr::select(HashIndex, CIK, YearQuarter, HTML)
 
@@ -138,9 +135,6 @@ edgar_get_document_links <- function(.dir, .user, .hash_idx, .workers = 1L, .ver
 #' @param .hash_idx
 #' Character vector of HashIndex values to process. If NULL, all available index entries
 #' will be processed.
-#' @param .workers
-#' Integer specifying the number of parallel workers for downloading. Defaults to 1.
-#' Higher values increase download speed but also increase server load.
 #' @param .verbose
 #' Logical indicating whether to print progress messages to the console during processing.
 #' Default is TRUE.
@@ -160,7 +154,7 @@ edgar_get_document_links <- function(.dir, .user, .hash_idx, .workers = 1L, .ver
 #' the sequence numbers of batches to be processed for that period.
 #'
 #' @keywords internal
-get_tbp_hashindex <- function(.dir, .hash_idx, .workers, .verbose = TRUE) {
+get_tbp_hashindex <- function(.dir, .hash_idx, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
   dir_tmp_ <- fs::dir_delete(lp_$DocLinks$DirTemp$DirToBePrc)
   lp_ <- get_directories(.dir)
@@ -185,7 +179,7 @@ get_tbp_hashindex <- function(.dir, .hash_idx, .workers, .verbose = TRUE) {
     ) %>%
     dplyr::group_by(YearQuarter, FormType) %>%
     dplyr::mutate(
-      Seq = ceiling(dplyr::row_number() / .workers),
+      Seq = ceiling(dplyr::row_number() / 10L),
       PathTmp = file.path(dir_tmp_, paste0(YearQtrSave, "_", FormTypeSave, ".parquet"))
     ) %>%
     dplyr::ungroup() %>%
@@ -213,8 +207,6 @@ get_tbp_hashindex <- function(.dir, .hash_idx, .workers, .verbose = TRUE) {
 #' Integer representing the current batch number being processed.
 #' @param .tot
 #' Integer representing the total number of batches to process.
-#' @param .workers
-#' Integer representing the number of parallel workers in use.
 #' @param .verbose
 #' Logical indicating whether to print progress messages to the console.
 #'
@@ -226,9 +218,9 @@ get_tbp_hashindex <- function(.dir, .hash_idx, .workers, .verbose = TRUE) {
 #' @return No return value, called for side effects (console output).
 #'
 #' @keywords internal
-print_doclinks_loop <- function(.yq, .loop, .tot, .workers, .verbose) {
-  nloop_ <- scales::comma(.loop * .workers)
-  ntot_ <- scales::comma(.tot * .workers)
+print_doclinks_loop <- function(.yq, .loop, .tot, .verbose) {
+  nloop_ <- scales::comma(.loop * 10L)
+  ntot_ <- scales::comma(.tot * 10L)
   msg_ <- paste0("Processing: ", .yq, " (", nloop_, "/", ntot_, ")")
   print_verbose(msg_, .verbose, "\r")
 }
@@ -466,14 +458,12 @@ if (FALSE) {
   .dir = dir_debug
   .user = user
   .hash_idx = .hash_idx
-  .workers = 10L
   .verbose = TRUE
 
   edgar_get_document_links(
     .dir = dir_debug,
     .user = user,
     .hash_idx = .hash_idx,
-    .workers = 10L,
     .verbose = TRUE
   )
 }

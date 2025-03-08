@@ -4,7 +4,7 @@
 \alias{print_doclinks_loop}
 \title{Print Document Links Processing Loop Status}
 \usage{
-print_doclinks_loop(.yq, .loop, .tot, .workers, .verbose)
+print_doclinks_loop(.yq, .loop, .tot, .verbose)
 }
 \arguments{
 \item{.yq}{Character string representing the year-quarter being processed (e.g., "2023-1").}
@@ -12,8 +12,6 @@ print_doclinks_loop(.yq, .loop, .tot, .workers, .verbose)
 \item{.loop}{Integer representing the current batch number being processed.}
 
 \item{.tot}{Integer representing the total number of batches to process.}
-
-\item{.workers}{Integer representing the number of parallel workers in use.}
 
 \item{.verbose}{Logical indicating whether to print progress messages to the console.}
 }
