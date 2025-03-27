@@ -18,13 +18,11 @@ rGetEDGAR provides tools for downloading, processing, and analyzing SEC EDGAR fi
 
 -   **Complete Pipeline**: Download master indices, document links, and actual filing documents
 
--   **Parallel Processing**: Significantly reduce download times with multi-core capabilities
-
--   **Smart Rate Limiting**: Automatically adheres to SEC's 10 requests/second guidelines
+-   **Rate Limiting**: Automatically adheres to SEC's 10 requests/second guidelines
 
 -   **Hybrid Storage**: Uses both SQLite (for queries) and Parquet (for analytics) formats
 
--   **Robust Error Handling**: Gracefully manages network issues and malformed content
+-   **Error Handling**: Gracefully manages network issues and malformed content
 
 -   **Flexible Filtering**: Filter by company, form type, document type, and time period
 
