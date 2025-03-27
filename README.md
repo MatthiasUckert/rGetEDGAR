@@ -51,7 +51,7 @@ storage formats.
 # install.packages("devtools")
 devtools::install_github("MatthiasUckert/rGetEDGAR")
 
-# Alternative with pak
+# Alternative with pak 
 # install.packages("pak")
 pak::pak("MatthiasUckert/rGetEDGAR")
 ```
