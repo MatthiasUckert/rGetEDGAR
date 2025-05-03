@@ -2,115 +2,104 @@
 #' Download SEC EDGAR Documents
 #'
 #' @description
-#' Downloads and processes actual document files from SEC EDGAR filings. This function
-#' retrieves the raw document content referenced in filing indexes and supports parallel
-#' downloading for improved performance.
+#' Downloads and processes documents from SEC EDGAR based on specified document IDs.
+#' This function handles downloading the original documents and creating parsed versions
+#' for analysis.
 #'
 #' @param .dir
 #' Character string specifying the directory where the downloaded data will be stored.
-#' This directory should contain the necessary subdirectory structure.
+#' This directory should contain the necessary sub directory structure.
 #' @param .user
 #' Character string specifying the user agent to be used in HTTP requests to the SEC EDGAR server.
 #' This should typically be an email address to comply with SEC's fair access policy.
 #' @param .doc_ids
-#' Character vector of document IDs to download. If NULL, all available documents
-#' that haven't been previously downloaded will be processed.
-#' @param .workers
-#' Integer specifying the number of parallel workers for downloading. Defaults to 1.
-#' Higher values increase download speed but also increase server load.
+#' Character vector of DocID values to download. These IDs should correspond to document
+#' identifiers in the SEC EDGAR system.
+#' @param .keep_orig
+#' Logical indicating whether to keep the original downloaded files after processing.
+#' If TRUE, original files are compressed into ZIP archives. Default is TRUE.
 #' @param .verbose
 #' Logical indicating whether to print progress messages to the console during processing.
 #' Default is TRUE.
 #'
-#' @details
-#' The function performs the following steps:
-#' \itemize{
-#'   \item Identifies which documents need to be downloaded based on the provided document IDs
-#'   \item Organizes documents into batches by document type and year-quarter
-#'   \item Creates temporary directories for initial storage of downloaded files
-#'   \item Downloads documents in parallel using the specified number of workers
-#'   \item Compresses downloaded documents into ZIP archives organized by document type and period
-#'   \item Maintains proper rate limiting to comply with SEC's fair access policy
-#' }
-#'
-#' The function handles various document formats, including HTML, XML, text, and binary files
-#' such as PDFs. It stores downloaded files in a temporary directory structure before
-#' compressing them into ZIP archives for permanent storage.
-#'
-#' The process implements error handling to gracefully manage network issues, malformed
-#' content, or other download failures without interrupting the entire batch.
-#'
 #' @return No return value, called for side effects (downloading and saving data files).
 #'
-#' @examples
-#' \dontrun{
-#' edgar_download_document(
-#'   .dir = "edgar_data",
-#'   .user = "your@email.com",
-#'   .doc_ids = c("0000320193-123456789", "0001018724-987654321"),
-#'   .workers = 4,
-#'   .verbose = TRUE
-#' )
-#' }
-#'
 #' @export
-edgar_download_document <- function(.dir, .user, .doc_ids, .workers = 1L, .verbose = TRUE) {
+edgar_download_document <- function(.dir, .user, .doc_ids, .keep_orig = TRUE, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
-  plog_ <- lp_$DocumentData$FilLogOriginal
-  tab_seq_ <- get_tbp_docids(.dir, .doc_ids, .workers) %>%
-    tidyr::nest(.by = c(dir_tmp, dir_out))
+  msg_ <- "Determining Documents to Download ..."
+  print_verbose(msg_, .verbose, .line = "\r")
+  tab_links <- edgar_get_docs_to_download(.dir, .doc_ids)
 
+  msg_ <- gsub("...", paste0("(", scales::comma(nrow(tab_links)), ")"), msg_, fixed = TRUE)
+  print_verbose(msg_, .verbose, .line = "\n")
+  nst_links <- tab_links %>%
+    tidyr::nest(.by = c(TypeSave, YQSave)) %>%
+    dplyr::mutate(
+      DirOrig = file.path(lp_$DocumentData$Original, TypeSave, YQSave),
+      PathZIP = paste0(DirOrig, ".zip")
+    )
 
-  con_prcs_ <- DBI::dbConnect(RSQLite::SQLite(), lp_$DocumentData$Temporary$FilToBePrc)
+  for (i in seq_len(nrow(nst_links))) {
+    use_links <- nst_links$data[[i]] %>%
+      dplyr::mutate(
+        nAll = dplyr::n(), nRow = dplyr::row_number(),
+        cAll = scales::comma(nAll), cRow = scales::comma(nRow),
+        Print = paste0(nst_links$TypeSave[i], ": ", nst_links$YQSave[i], " (", cRow, "/", cAll, ")"),
+      ) %>%
+      dplyr::arrange(nRow) %>%
+      dplyr::select(-c(nAll, nRow, cAll, cRow))
 
-  future::plan("multisession", workers = .workers)
-  for (i in seq_len(nrow(tab_seq_))) {
-    use_seq_ <- tab_seq_$data[[i]]
+    t0_ <- Sys.time()
+    rate_ <- "0.00 Docs/Sec"
+    for (j in seq_len(nrow(use_links))) {
+      print_verbose(paste0(use_links$Print[j], ": ", rate_, "        "), .verbose, .line = "\r")
+      if (j %% 10 == 0) {
+        if (difftime(Sys.time(), t0_) <= 1.05) {
+          Sys.sleep(1.05 - difftime(Sys.time(), t0_))
+        }
+        rate_ <- round(10 / as.numeric(difftime(Sys.time(), t0_)), 2)
+        rate_ <- paste0(rate_, " Docs/Sec")
+        t0_ <- Sys.time()
+      }
 
-    for (j in seq_len(nrow(use_seq_))) {
-      t0_ <- Sys.time()
-      yq0_ <- use_seq_$YearQuarter[i]
-      yq1_ <- gsub(".", "-", yq0_, fixed = TRUE)
-      tot_ <- max(use_seq_$Seq)
-
-      typ_ <- use_seq_$DocType[i]
-      seq_ <- use_seq_$Seq[j]
-      print_download_loop(yq1_, use_seq_$DocType[1], j, tot_, .workers, .verbose)
-
-      use_ <- dplyr::tbl(con_prcs_, "tobeprocessed") %>%
-        dplyr::filter(YearQuarter == yq0_, DocType == typ_, Seq == seq_) %>%
-        dplyr::collect() %>%
-        dplyr::mutate(
-          path_tmp = file.path(tab_seq_$dir_tmp[i], paste0(DocID, ".", tools::file_ext(UrlDocument)))
+      if (!file.exists(use_links$PathOrig[j])) {
+        edgar_download_url_request(
+          .url = use_links$UrlDocument[j],
+          .user = .user,
+          .path_out = use_links$PathOrig[j],
+          .path_log = lp_$DocumentData$FilLogOriginal,
+          .verbose = .verbose
         )
+      }
 
-      .url <- use_$UrlDocument[1]
-      .path_out <- use_$path_tmp[1]
-
-      furrr::future_walk2(
-        .x = use_$UrlDocument,
-        .y = use_$path_tmp,
-        .f = ~ download_url_request(.x, .user, .y, plog_, .verbose)
-      )
-      elapsed_ <- as.numeric(difftime(Sys.time(), t0_))
-      if (!elapsed_ >= 1.05) {
-        Sys.sleep(1.05 - elapsed_)
+      if (!file.exists(use_links$PathParse[j])) {
+        edgar_parse_documents(
+          .path_src = use_links$PathOrig[j],
+          .path_out = use_links$PathParse[j]
+        )
       }
     }
 
-    time_ <- format(Sys.time(), "%Y-%m-%d-%H-%M-%S")
-    nam_zip_ <- paste0(time_, "_", basename(tab_seq_$dir_out[i]), ".zip")
-    fs::dir_create(tab_seq_$dir_out[i])
-    zip::zipr(
-      zipfile = file.path(tab_seq_$dir_out[i], nam_zip_),
-      files = list_files(tab_seq_$dir_tmp[i])[["path"]],
-      compression_level = 9
-    )
+    if (.keep_orig) {
+      if (file.exists(nst_links$PathZIP[i])) {
+        zip::zip_append(
+          zipfile = nst_links$PathZIP[i],
+          files = use_links$PathOrig[file.exists(use_links$PathOrig)],
+          compression_level = 9
+        )
+      } else {
+        zip::zipr(
+          zipfile = nst_links$PathZIP[i],
+          files = use_links$PathOrig[file.exists(use_links$PathOrig)],
+          compression_level = 9
+        )
+      }
+    }
 
-    try(fs::dir_delete(tab_seq_$dir_tmp[i]), silent = TRUE)
-    try(fs::dir_delete(lp_$DocumentData$Temporary$FilToBePrc), silent = TRUE)
+
+    try(fs::dir_delete(nst_links$DirOrig[i]), silent = TRUE)
   }
-  future::plan("default")
 }
 
 # Helper Functions ----------------------------------------------------------------------------
@@ -150,7 +139,7 @@ edgar_download_document <- function(.dir, .user, .doc_ids, .workers = 1L, .verbo
 #' @return No return value, called for side effects (downloading and saving a file).
 #'
 #' @keywords internal
-download_url_request <- function(.url, .user, .path_out, .path_log, .verbose) {
+edgar_download_url_request <- function(.url, .user, .path_out, .path_log, .verbose) {
   fs::dir_create(dirname(.path_out))
   if (file.exists(.path_out)) {
     return(invisible(NULL))
@@ -173,123 +162,175 @@ download_url_request <- function(.url, .user, .path_out, .path_log, .verbose) {
   }
 }
 
-#' Print Document Download Loop Status
+#' Determine Documents to Download from SEC EDGAR
 #'
 #' @description
-#' Formats and prints processing status information for the document download loop.
-#' This function provides feedback on the progress of SEC EDGAR document downloading.
-#'
-#' @param .yq
-#' Character string representing the year-quarter being processed (e.g., "2023-1").
-#' @param .typ
-#' Character string representing the document type being processed (e.g., "10-K").
-#' @param .loop
-#' Integer representing the current batch number being processed.
-#' @param .tot
-#' Integer representing the total number of batches to process.
-#' @param .workers
-#' Integer representing the number of parallel workers in use.
-#' @param .verbose
-#' Logical indicating whether to print progress messages to the console.
-#'
-#' @details
-#' The function formats counters with comma separators for readability
-#' and displays a progress indicator showing the current batch number
-#' relative to the total batches to be processed, along with document type
-#' and year-quarter information.
-#'
-#' @return No return value, called for side effects (console output).
-#'
-#' @keywords internal
-print_download_loop <- function(.yq, .typ, .loop, .tot, .workers, .verbose) {
-  nloop_ <- scales::comma(.loop * .workers)
-  ntot_ <- scales::comma(.tot * .workers)
-  msg_ <- paste0("Processing: ", .typ, " - ", .yq, " (", nloop_, "/", ntot_, ")")
-  print_verbose(msg_, .verbose, "\r")
-}
-
-#' Prepare "To Be Processed" Document IDs Queue
-#'
-#' @description
-#' Prepares a queuing system for SEC EDGAR documents to be downloaded in batches.
-#' This function creates a temporary SQLite database to track which documents
-#' need to be processed and assigns them to download batches.
+#' Prepares a list of SEC EDGAR documents to download based on provided document IDs.
+#' This function filters the document links database to identify which documents need
+#' to be downloaded and determines appropriate file paths for saving.
 #'
 #' @param .dir
-#' Character string specifying the root directory where SEC EDGAR data is stored.
+#' Character string specifying the directory where the downloaded data will be stored.
+#' This directory should contain the necessary sub directory structure.
 #' @param .doc_ids
-#' Character vector of document IDs to process. If NULL, all available documents
-#' that haven't been previously downloaded will be processed.
-#' @param .workers
-#' Integer specifying the number of parallel workers for downloading.
+#' Character vector of DocID values to download. These IDs should correspond to document
+#' identifiers in the SEC EDGAR system.
+#'
+#' @details
+#' The function performs the following operations:
+#' \itemize{
+#'   \item Queries the document links dataset to find matching document IDs
+#'   \item Joins with document type mapping table to standardize document types
+#'   \item Creates file paths for both original and parsed document storage
+#'   \item Filters out documents that have already been processed
+#' }
+#'
+#' Document types are standardized according to a predefined mapping table,
+#' and output paths are generated using a consistent directory structure organized
+#' by document type and year-quarter period.
 #'
 #' @return
-#' A tibble with distinct combinations of DocType, YearQuarter, Seq, dir_tmp,
-#' and dir_out, representing the batches to be processed.
+#' A tibble containing document metadata and file paths for documents that need
+#' to be downloaded, with the following columns:
+#' \itemize{
+#'   \item YearQuarter: Original filing year and quarter as numeric (e.g., 2023.1)
+#'   \item DocTypeMod: Standardized document type
+#'   \item DocID: Unique document identifier
+#'   \item UrlDocument: URL to download the document
+#'   \item YQSave: Year-quarter for directory structure (e.g., 2023-1)
+#'   \item TypeSave: Standardized document type for directory structure
+#'   \item DocExt: Document file extension
+#'   \item PathOrig: File path for original document
+#'   \item PathParse: File path for parsed document
+#' }
 #'
 #' @keywords internal
-get_tbp_docids <- function(.dir, .doc_ids, .workers) {
+edgar_get_docs_to_download <- function(.dir, .doc_ids) {
   lp_ <- get_directories(.dir)
+  doc_types_ <- dplyr::select(get("Table_DocTypesRaw"), DocTypeRaw, DocTypeMod)
 
-  path_ <- lp_$DocumentData$Temporary$FilToBePrc
-  table_ <- "tobeprocessed"
-  try(fs::file_delete(path_), silent = TRUE)
-
-  con_ <- DBI::dbConnect(RSQLite::SQLite(), path_)
-  query0_ <- "CREATE TABLE tobeprocessed (DocID TEXT, CIK TEXT, DocType TEXT, YearQuarter REAL, Seq INTEGER, UrlDocument TEXT, dir_out TEXT)"
-  DBI::dbExecute(con_, query0_)
-  query1_ <- paste0("CREATE INDEX IF NOT EXISTS Seq", table_, " ON ", table_, "(Seq)")
-  DBI::dbExecute(con_, query1_)
-  query2_ <- paste0("CREATE INDEX IF NOT EXISTS YearQuarter", table_, " ON ", table_, "(YearQuarter)")
-  DBI::dbExecute(con_, query2_)
-  query3_ <- paste0("CREATE INDEX IF NOT EXISTS DocType", table_, " ON ", table_, "(DocType)")
-  DBI::dbExecute(con_, query3_)
-
-  fil_zips_ <- list_files(lp_$DocumentData$Original, .rec = TRUE)
-
-  if (nrow(fil_zips_) == 0) {
-    prc_ <- NA_character_
-  } else {
-    prc_ <- dplyr::bind_rows(purrr::map(
-      .x = fil_zips_$path,
-      .f = ~ dplyr::mutate(tibble::as_tibble(zip::zip_list(.x)), PathZIP = .x)
-    )) %>%
-      dplyr::mutate(DocID = fs::path_ext_remove(filename)) %>%
-      dplyr::pull(DocID)
-  }
-
-  arr_doc_ <- arrow::open_dataset(lp_$DocLinks$DirMain$Links)
-  if (!is.null(.doc_ids)) {
-    arr_doc_ <- dplyr::filter(arr_doc_, DocID %in% .doc_ids)
-  }
-  arr_doc_ <- dplyr::collect(dplyr::filter(arr_doc_, !DocID %in% prc_))
-
-
-
-  tab_ <- arr_doc_ %>%
-    dplyr::mutate(DocExt = tools::file_ext(UrlDocument)) %>%
-    dplyr::filter(!DocExt == "") %>%
-    dplyr::left_join(
-      y = dplyr::select(get("Table_DocTypesRaw"), Type = DocTypeRaw, DocTypeMod),
-      by = "Type"
+  tmp_links_ <- arrow::open_dataset(lp_$DocLinks$DirMain$Links) %>%
+    dplyr::filter(DocID %in% .doc_ids) %>%
+    dplyr::select(YearQuarter, DocTypeRaw = Type, DocID, UrlDocument) %>%
+    dplyr::inner_join(
+      y = arrow::as_arrow_table(doc_types_),
+      by = dplyr::join_by(DocTypeRaw)
     ) %>%
-    dplyr::group_by(DocTypeMod, YearQuarter) %>%
-    dplyr::mutate(Seq = ceiling(dplyr::row_number() / .workers)) %>%
-    dplyr::ungroup() %>%
+    dplyr::collect()
+
+  tmp_links_ %>%
     dplyr::mutate(
-      TypeSave = gsub("\\-|\\s", "", DocTypeMod),
-      YqSave = gsub("\\.", "-", YearQuarter),
-      dir_out = file.path(lp_$DocumentData$Original, paste0(TypeSave, "_", YqSave)),
-      dir_tmp = file.path(dirname(lp_$DocumentData$Temporary[[1]]), paste0(TypeSave, "_", YqSave))
+      YQSave = gsub(".", "-", YearQuarter, fixed = TRUE),
+      TypeSave = gsub(" ", "", DocTypeMod, fixed = TRUE),
+      TypeSave = gsub("/", "", TypeSave, fixed = TRUE),
+      DocExt = tolower(tools::file_ext(UrlDocument))
     ) %>%
-    dplyr::select(DocID, CIK, DocType = DocTypeMod, YearQuarter, Seq, UrlDocument, dir_tmp, dir_out)
-
-
-  DBI::dbWriteTable(con_, table_, tab_, overwrite = TRUE)
-  DBI::dbDisconnect(con_)
-
-  dplyr::distinct(tab_, DocType, YearQuarter, Seq, dir_tmp, dir_out)
+    dplyr::filter(!DocExt == "") %>%
+    dplyr::select(YearQuarter, DocTypeMod, DocID, UrlDocument, YQSave, TypeSave, DocExt) %>%
+    dplyr::mutate(
+      PathOrig = file.path(lp_$DocumentData$Original, TypeSave, YQSave, paste0(DocID, ".", DocExt)),
+      PathParse = file.path(lp_$DocumentData$Parsed, TypeSave, YQSave, paste0(DocID, ".parquet"))
+    ) %>%
+    dplyr::filter(!file.exists(PathParse))
 }
+
+#' Parse Downloaded SEC EDGAR Documents
+#'
+#' @description
+#' Processes downloaded SEC EDGAR documents into structured data format for analysis.
+#' This function handles different file types (HTML, text, PDF) and extracts
+#' content for further processing.
+#'
+#' @param .path_src
+#' Character string specifying the file path of the source document to parse.
+#' @param .path_out
+#' Character string specifying the file path where the parsed document will be saved.
+#'
+#' @details
+#' The function performs different parsing operations based on the document type:
+#' \itemize{
+#'   \item HTML/HTM files: Extracts text using HTML parsing functions
+#'   \item TXT/XML/XSD files: Reads raw content directly
+#'   \item PDF files: Extracts text if not encrypted, reports error otherwise
+#'   \item Other formats: Reports unsupported format error
+#' }
+#'
+#' For all successfully parsed documents, the function standardizes text format
+#' to facilitate consistent analysis. The output is saved as a Parquet file with
+#' compression to minimize storage requirements.
+#'
+#' If parsing fails, the function will still create an output file containing
+#' error information, ensuring that the processing pipeline can continue.
+#'
+#' @return
+#' A tibble containing the parsed document with the following columns:
+#' \itemize{
+#'   \item DocID: Document identifier derived from the source path
+#'   \item HTML: Original document content
+#'   \item TextRaw: Raw extracted text
+#'   \item TextMod: Standardized text after processing
+#'   \item DocExt: Document file extension
+#'   \item ErrParse: Logical indicating whether parsing encountered an error
+#'   \item MsgParse: Error message if parsing failed, NA otherwise
+#' }
+#'
+#' The function also writes this tibble to the specified output path in Parquet format.
+#'
+#' @keywords internal
+edgar_parse_documents <- function(.path_src, .path_out) {
+  fs::dir_create(dirname(.path_out))
+  file_ext_ <- tolower(tools::file_ext(.path_src))
+
+  if (file_ext_ %in% c("txt", "htm", "html", "xml", "xsd")) {
+    orig_ <- try(readChar(.path_src, file.info(.path_src)$size), silent = TRUE)
+  } else if (file_ext_ %in% c("pdf")) {
+    info_ <- pdftools::pdf_info(.path_src)
+    if (!info_$encrypted) {
+      orig_ <- try(readtext::readtext(.path_src)[["text"]], silent = TRUE)
+    } else {
+      orig_ <- try(stop("PDF is Encrypted", call. = FALSE))
+    }
+  } else {
+    orig_ <- try(stop(paste0(file_ext_, "is not supported"), call. = FALSE))
+  }
+
+  if (!inherits(orig_, "try-error")) {
+    if (file_ext_ %in% c("htm", "html")) {
+      raw_ <- read_html(orig_)
+    } else {
+      raw_ <- orig_
+    }
+
+    mod_ <- standardize_text(raw_)
+
+    out_ <- tibble::tibble(
+      DocID = fs::path_ext_remove(.path_src),
+      HTML = orig_,
+      TextRaw = raw_,
+      TextMod = mod_,
+      DocExt = file_ext_,
+      ErrParse = FALSE,
+      MsgParse = NA_character_
+    )
+  } else {
+    out_ <- tibble::tibble(
+      DocID = fs::path_ext_remove(.path_src),
+      HTML = NA_character_,
+      TextRaw = NA_character_,
+      TextMod = NA_character_,
+      DocExt = file_ext_,
+      ErrParse = TRUE,
+      MsgParse = paste(as.character(orig_), collapse = "")
+    )
+  }
+
+  arrow::write_parquet(out_, .path_out, compression = "gzip", compression_level = 9)
+
+  return(out_)
+}
+
+
+
 
 
 if (FALSE) {
@@ -306,26 +347,15 @@ if (FALSE) {
 
   tab_ex10 <- dplyr::filter(Table_DocTypesRaw, DocTypeMod == "Exhibit 10")
   scales::comma(sum(tab_ex10$nDocs))
-  .doc_ids <- arrow::open_dataset(lp_$DocLinks$DirMain$Links) %>%
+  docs <- arrow::open_dataset(lp_$DocLinks$DirMain$Links) %>%
     dplyr::filter(Type %in% tab_ex10$DocTypeRaw) %>%
     dplyr::distinct(DocID) %>%
     dplyr::collect() %>%
     dplyr::pull(DocID)
-  scales::comma(length(.doc_ids))
-
+  scales::comma(length(docs))
 
   .dir <- dir_debug
   .user <- user
-  .doc_ids <- .doc_ids
-  .workers <- 10L
+  .doc_ids <- docs[1000000:1001000]
   .verbose <- TRUE
-
-
-  edgar_get_document_links(
-    .dir = dir_debug,
-    .user = user,
-    .hash_idx = .hash_idx,
-    .workers = 5L,
-    .verbose = TRUE
-  )
 }

@@ -117,7 +117,6 @@ edgar_get_document_links <- function(.dir, .user, .hash_idx, .verbose = TRUE) {
     error_logging(plog_, "INFO", msg_out_, det_out_)
 
   }
-  future::plan("default")
 
 }
 

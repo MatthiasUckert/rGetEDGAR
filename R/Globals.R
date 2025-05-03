@@ -35,7 +35,10 @@ utils::globalVariables(c(
   # list_files
   "path", "doc_id",
 
-  # parse_files
-  "HTML", "TextRaw", "TextMod"
+  # edgar_download_document
+  "YQSave", "DirOrig", "nAll", "nRow", "cAll", "cRow",
+
+  # edgar_get_docs_to_download
+  "PathParse"
 
 ))

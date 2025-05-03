@@ -4,20 +4,26 @@
 \alias{edgar_download_document}
 \title{Download SEC EDGAR Documents}
 \usage{
-edgar_download_document(.dir, .user, .doc_ids, .workers = 1L, .verbose = TRUE)
+edgar_download_document(
+  .dir,
+  .user,
+  .doc_ids,
+  .keep_orig = TRUE,
+  .verbose = TRUE
+)
 }
 \arguments{
 \item{.dir}{Character string specifying the directory where the downloaded data will be stored.
-This directory should contain the necessary subdirectory structure.}
+This directory should contain the necessary sub directory structure.}
 
 \item{.user}{Character string specifying the user agent to be used in HTTP requests to the SEC EDGAR server.
 This should typically be an email address to comply with SEC's fair access policy.}
 
-\item{.doc_ids}{Character vector of document IDs to download. If NULL, all available documents
-that haven't been previously downloaded will be processed.}
+\item{.doc_ids}{Character vector of DocID values to download. These IDs should correspond to document
+identifiers in the SEC EDGAR system.}
 
-\item{.workers}{Integer specifying the number of parallel workers for downloading. Defaults to 1.
-Higher values increase download speed but also increase server load.}
+\item{.keep_orig}{Logical indicating whether to keep the original downloaded files after processing.
+If TRUE, original files are compressed into ZIP archives. Default is TRUE.}
 
 \item{.verbose}{Logical indicating whether to print progress messages to the console during processing.
 Default is TRUE.}
@@ -26,37 +32,7 @@ Default is TRUE.}
 No return value, called for side effects (downloading and saving data files).
 }
 \description{
-Downloads and processes actual document files from SEC EDGAR filings. This function
-retrieves the raw document content referenced in filing indexes and supports parallel
-downloading for improved performance.
-}
-\details{
-The function performs the following steps:
-\itemize{
-\item Identifies which documents need to be downloaded based on the provided document IDs
-\item Organizes documents into batches by document type and year-quarter
-\item Creates temporary directories for initial storage of downloaded files
-\item Downloads documents in parallel using the specified number of workers
-\item Compresses downloaded documents into ZIP archives organized by document type and period
-\item Maintains proper rate limiting to comply with SEC's fair access policy
-}
-
-The function handles various document formats, including HTML, XML, text, and binary files
-such as PDFs. It stores downloaded files in a temporary directory structure before
-compressing them into ZIP archives for permanent storage.
-
-The process implements error handling to gracefully manage network issues, malformed
-content, or other download failures without interrupting the entire batch.
-}
-\examples{
-\dontrun{
-edgar_download_document(
-  .dir = "edgar_data",
-  .user = "your@email.com",
-  .doc_ids = c("0000320193-123456789", "0001018724-987654321"),
-  .workers = 4,
-  .verbose = TRUE
-)
-}
-
+Downloads and processes documents from SEC EDGAR based on specified document IDs.
+This function handles downloading the original documents and creating parsed versions
+for analysis.
 }
