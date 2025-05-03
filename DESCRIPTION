@@ -35,6 +35,7 @@ Imports:
     RSQLite,
     rvest,
     scales,
+    snakecase,
     stringi,
     tibble,
     tidyr,

@@ -39,6 +39,9 @@ utils::globalVariables(c(
   "YQSave", "DirOrig", "nAll", "nRow", "cAll", "cRow",
 
   # edgar_get_docs_to_download
-  "PathParse"
+  "PathParse",
+
+  # edgar_parse_landingpage
+  "Name", "Info", "tmp", "tmp1", "tmp2", "CompanyName"
 
 ))
