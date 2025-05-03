@@ -284,12 +284,7 @@ edgar_parse_documents <- function(.path_src, .path_out) {
   if (file_ext_ %in% c("txt", "htm", "html", "xml", "xsd")) {
     orig_ <- try(readChar(.path_src, file.info(.path_src)$size), silent = TRUE)
   } else if (file_ext_ %in% c("pdf")) {
-    info_ <- pdftools::pdf_info(.path_src)
-    if (!info_$encrypted) {
-      orig_ <- try(readtext::readtext(.path_src)[["text"]], silent = TRUE)
-    } else {
-      orig_ <- try(stop("PDF is Encrypted", call. = FALSE))
-    }
+    orig_ <- try(readtext::readtext(.path_src)[["text"]], silent = TRUE)
   } else {
     orig_ <- try(stop(paste0(file_ext_, "is not supported"), call. = FALSE))
   }
@@ -304,7 +299,7 @@ edgar_parse_documents <- function(.path_src, .path_out) {
     mod_ <- standardize_text(raw_)
 
     out_ <- tibble::tibble(
-      DocID = fs::path_ext_remove(.path_src),
+      DocID = fs::path_ext_remove(basename(.path_src)),
       HTML = orig_,
       TextRaw = raw_,
       TextMod = mod_,
@@ -314,7 +309,7 @@ edgar_parse_documents <- function(.path_src, .path_out) {
     )
   } else {
     out_ <- tibble::tibble(
-      DocID = fs::path_ext_remove(.path_src),
+      DocID = fs::path_ext_remove(basename(.path_src)),
       HTML = NA_character_,
       TextRaw = NA_character_,
       TextMod = NA_character_,
@@ -330,9 +325,7 @@ edgar_parse_documents <- function(.path_src, .path_out) {
 }
 
 
-
-
-
+# DeBug ---------------------------------------------------------------------------------------
 if (FALSE) {
   devtools::load_all(".")
   # library(rGetEDGAR)
@@ -356,6 +349,22 @@ if (FALSE) {
 
   .dir <- dir_debug
   .user <- user
-  .doc_ids <- docs[1000000:1001000]
+  .doc_ids <- sample(docs, size = 100)
   .verbose <- TRUE
+
+  edgar_download_document(
+    .dir = dir_debug,
+    .user = user,
+    .doc_ids = sample(docs, size = 100),
+    .keep_orig = FALSE,
+    .verbose = TRUE
+  )
+
+
+
+
+
+
+
+  tab_ <- arrow::read_parquet("/Users/matthiasuckert/RProjects/Packages/_package_debug/rGetEDGAR/DocumentData/Parsed/Exhibit10/2000-2/0001064863-73eaf7478434179fae22e342b19d5559.parquet")
 }

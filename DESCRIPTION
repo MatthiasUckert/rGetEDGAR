@@ -30,7 +30,6 @@ Imports:
     janitor,
     lubridate,
     magrittr,
-    pdftools,
     purrr,
     readtext,
     RSQLite,
