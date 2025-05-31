@@ -11,12 +11,13 @@
 #'   Character string. Path to the base directory where all downloaded data (original and parsed)
 #'   will be stored. Must contain the expected subdirectory structure (as returned by \code{get_directories()}).
 #' @param .user
-#'   Character string. The \emph{User-Agent} (typically an email address) to send in HTTP
+#'   Character string.
+#'   The \emph{User-Agent} (typically an email address) to send in HTTP
 #'   requests to the SEC EDGAR servers, to comply with the SEC’s fair access policy.
 #' @param .doc_ids
-#'   Character vector. A vector of \code{DocID} identifiers corresponding to filings in the
-#'   SEC EDGAR database. Only those documents whose parsed version does not already exist
-#'   (in the \code{Parsed} folder) will be fetched.
+#'   Character vector.
+#'   A vector of \code{DocID} identifiers corresponding to filings in the SEC EDGAR database.
+#'   Only those documents whose parsed version does not already exist (in the \code{Parsed} folder) will be fetched.
 #' @param .keep_orig
 #'   Logical (default \code{TRUE}). If \code{TRUE}, the function will compress the downloaded original
 #'   files for each \code{TypeSave}/\code{YQSave} grouping into a ZIP archive at the end of processing.
@@ -50,7 +51,7 @@ edgar_download_document <- function(.dir, .user, .doc_ids, .keep_orig = TRUE, .w
 
   future::plan("multisession", workers = .workers)
   for (i in seq_len(nrow(nst_links))) {
-    use_links <- edgar_prepare_print_message(nst_links$data[[i]])
+    use_links <- edgar_prepare_print_message(nst_links, .counter = i)
     ini_ <- list(T0 = Sys.time(), Rate = "0.00 Docs/Sec")
 
     # Download Documents -- -- -- -- --
@@ -70,7 +71,6 @@ edgar_download_document <- function(.dir, .user, .doc_ids, .keep_orig = TRUE, .w
     }
 
     # Parse Documents -- -- -- -- --
-    print_verbose(msg_, .verbose, .line = "\n")
     use_links <- dplyr::filter(use_links, file.exists(PathOrig))
     furrr::future_walk2(
       .x = use_links$PathOrig,
@@ -99,36 +99,24 @@ edgar_download_document <- function(.dir, .user, .doc_ids, .keep_orig = TRUE, .w
 
 
 # Helper Functions ----------------------------------------------------------------------------
-#' Prepare Console Print Messages for EDGAR Download Progress
+#' Prepare Print Messages for a Nested EDGAR Download Group
 #'
-#' @description
-#' Creates a new column \code{Print} in the input tibble that formats the download progress
-#' message for each document. It calculates the total number of rows (\code{nAll}), the
-#' current row index (\code{nRow}), and uses these to build a string of the form
-#' \code{"<TypeSave>: <YQSave> (<current>/<total>"} for printing during the download loop.
-#'
-#' @param .tab
-#'   A tibble (or data frame) that must contain at least the columns:
-#'   \itemize{
-#'     \item \code{TypeSave}: Character, indicating the standardized document type.
-#'     \item \code{YQSave}: Character, indicating the year-quarter (e.g., \code{"2023-1"}).
-#'   }
-#'   Typically, \code{.tab} is the output of \code{edgar_get_docs_to_download()} grouped or nested
-#'   by \code{TypeSave} and \code{YQSave}.
-#'
-#' @return
-#'   A tibble identical to \code{.tab} but with an additional column:
-#'   \itemize{
-#'     \item \code{Print}: Character, formatted progress message for console printing.
-#'   }
-#'
+#' @param .nst
+#'   A tibble (usually the output of \code{tidyr::nest()}) with at least the following columns:
+#' @return A tibble
 #' @keywords internal
-edgar_prepare_print_message <- function(.tab) {
-  .tab %>%
+edgar_prepare_print_message <- function(.nst, .counter) {
+  type_ <- .nst$TypeSave[.counter]
+  yq_   <- .nst$YQSave[.counter]
+
+  # Access the nested tibble for this grouping
+  .nst$data[[.counter]] %>%
     dplyr::mutate(
-      nAll = dplyr::n(), nRow = dplyr::row_number(),
-      cAll = scales::comma(nAll), cRow = scales::comma(nRow),
-      Print = paste0(TypeSave, ": ", YQSave, " (", cRow, "/", cAll, ")"),
+      nAll = dplyr::n(),
+      nRow = dplyr::row_number(),
+      cAll = scales::comma(nAll),
+      cRow = scales::comma(nRow),
+      Print = paste0(type_, ": ", yq_, " (", cRow, "/", cAll, ")")
     ) %>%
     dplyr::arrange(nRow) %>%
     dplyr::select(-c(nAll, nRow, cAll, cRow))
@@ -403,8 +391,9 @@ if (FALSE) {
   edgar_download_document(
     .dir = dir_debug,
     .user = user,
-    .doc_ids = "0000021076-2b3e3582334324bbc0d77093ba366ca2",
+    .doc_ids =  tab_docs$DocID[1:1000],
     .keep_orig = FALSE,
+    .workers = 10L,
     .verbose = TRUE
   )
 }

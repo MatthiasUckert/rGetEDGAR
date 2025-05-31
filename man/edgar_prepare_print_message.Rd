@@ -2,29 +2,17 @@
 % Please edit documentation in R/DocumentDownload.R
 \name{edgar_prepare_print_message}
 \alias{edgar_prepare_print_message}
-\title{Prepare Console Print Messages for EDGAR Download Progress}
+\title{Prepare Print Messages for a Nested EDGAR Download Group}
 \usage{
-edgar_prepare_print_message(.tab)
+edgar_prepare_print_message(.nst, .counter)
 }
 \arguments{
-\item{.tab}{A tibble (or data frame) that must contain at least the columns:
-\itemize{
-\item \code{TypeSave}: Character, indicating the standardized document type.
-\item \code{YQSave}: Character, indicating the year-quarter (e.g., \code{"2023-1"}).
-}
-Typically, \code{.tab} is the output of \code{edgar_get_docs_to_download()} grouped or nested
-by \code{TypeSave} and \code{YQSave}.}
+\item{.nst}{A tibble (usually the output of \code{tidyr::nest()}) with at least the following columns:}
 }
 \value{
-A tibble identical to \code{.tab} but with an additional column:
-\itemize{
-\item \code{Print}: Character, formatted progress message for console printing.
-}
+A tibble
 }
 \description{
-Creates a new column \code{Print} in the input tibble that formats the download progress
-message for each document. It calculates the total number of rows (\code{nAll}), the
-current row index (\code{nRow}), and uses these to build a string of the form
-\code{"<TypeSave>: <YQSave> (<current>/<total>"} for printing during the download loop.
+Prepare Print Messages for a Nested EDGAR Download Group
 }
 \keyword{internal}
