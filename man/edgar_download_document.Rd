@@ -9,30 +9,39 @@ edgar_download_document(
   .user,
   .doc_ids,
   .keep_orig = TRUE,
+  .workers = 1L,
   .verbose = TRUE
 )
 }
 \arguments{
-\item{.dir}{Character string specifying the directory where the downloaded data will be stored.
-This directory should contain the necessary sub directory structure.}
+\item{.dir}{Character string. Path to the base directory where all downloaded data (original and parsed)
+will be stored. Must contain the expected subdirectory structure (as returned by \code{get_directories()}).}
 
-\item{.user}{Character string specifying the user agent to be used in HTTP requests to the SEC EDGAR server.
-This should typically be an email address to comply with SEC's fair access policy.}
+\item{.user}{Character string. The \emph{User-Agent} (typically an email address) to send in HTTP
+requests to the SEC EDGAR servers, to comply with the SEC’s fair access policy.}
 
-\item{.doc_ids}{Character vector of DocID values to download. These IDs should correspond to document
-identifiers in the SEC EDGAR system.}
+\item{.doc_ids}{Character vector. A vector of \code{DocID} identifiers corresponding to filings in the
+SEC EDGAR database. Only those documents whose parsed version does not already exist
+(in the \code{Parsed} folder) will be fetched.}
 
-\item{.keep_orig}{Logical indicating whether to keep the original downloaded files after processing.
-If TRUE, original files are compressed into ZIP archives. Default is TRUE.}
+\item{.keep_orig}{Logical (default \code{TRUE}). If \code{TRUE}, the function will compress the downloaded original
+files for each \code{TypeSave}/\code{YQSave} grouping into a ZIP archive at the end of processing.
+If \code{FALSE}, original files are deleted after parsing.}
 
-\item{.verbose}{Logical indicating whether to print progress messages to the console during processing.
-Default is TRUE.}
+\item{.workers}{Integer (default \code{1L}). The number of parallel workers to use when parsing documents.
+Passed to \code{\link[future]{plan}("multisession", workers = ...)}. Setting this to
+greater than 1 will parse multiple files concurrently.}
+
+\item{.verbose}{Logical (default \code{TRUE}). If \code{TRUE}, progress messages (e.g., download rates,
+messages per file) will be printed to the console. If \code{FALSE}, all internal messages
+are suppressed.}
 }
 \value{
-No return value, called for side effects (downloading and saving data files).
+Called for side effects: original files are downloaded
 }
 \description{
-Downloads and processes documents from SEC EDGAR based on specified document IDs.
-This function handles downloading the original documents and creating parsed versions
-for analysis.
+Downloads and processes documents from the SEC EDGAR system based on a set of document IDs.
+This function orchestrates the download of original filings and the creation of parsed versions
+for downstream analysis. Downloads are performed in parallel using a configurable number
+of workers. Original files can optionally be retained and compressed into ZIP archives.
 }

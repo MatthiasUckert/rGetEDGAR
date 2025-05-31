@@ -2,48 +2,28 @@
 % Please edit documentation in R/DocumentDownload.R
 \name{edgar_parse_documents}
 \alias{edgar_parse_documents}
-\title{Parse Downloaded SEC EDGAR Documents}
+\title{Parse a Downloaded SEC EDGAR Document to Parquet}
 \usage{
 edgar_parse_documents(.path_src, .path_out)
 }
 \arguments{
-\item{.path_src}{Character string specifying the file path of the source document to parse.}
+\item{.path_src}{Character string. File path to the source document to parse. Supported extensions:
+\code{txt}, \code{htm}, \code{html}, \code{xml}, \code{xsd}, \code{pdf}. If the file
+does not exist or the parsed Parquet file already exists at \code{.path_out}, the
+function returns invisibly.}
 
-\item{.path_out}{Character string specifying the file path where the parsed document will be saved.}
+\item{.path_out}{Character string. File path (including “.parquet”) where the parsed output will be written.
+Parent directories are created if missing.}
 }
 \value{
-A tibble containing the parsed document with the following columns:
-\itemize{
-\item DocID: Document identifier derived from the source path
-\item HTML: Original document content
-\item TextRaw: Raw extracted text
-\item TextMod: Standardized text after processing
-\item DocExt: Document file extension
-\item ErrParse: Logical indicating whether parsing encountered an error
-\item MsgParse: Error message if parsing failed, NA otherwise
-}
-
-The function also writes this tibble to the specified output path in Parquet format.
+Invisible \code{NULL}. For each call, a compressed Parquet file is written to disk
+at \code{.path_out}. If parsing fails, a one-row Parquet file is still written containing
+the \code{ErrParse = TRUE} record.
 }
 \description{
-Processes downloaded SEC EDGAR documents into structured data format for analysis.
-This function handles different file types (HTML, text, PDF) and extracts
-content for further processing.
-}
-\details{
-The function performs different parsing operations based on the document type:
-\itemize{
-\item HTML/HTM files: Extracts text using HTML parsing functions
-\item TXT/XML/XSD files: Reads raw content directly
-\item PDF files: Extracts text if not encrypted, reports error otherwise
-\item Other formats: Reports unsupported format error
-}
-
-For all successfully parsed documents, the function standardizes text format
-to facilitate consistent analysis. The output is saved as a Parquet file with
-compression to minimize storage requirements.
-
-If parsing fails, the function will still create an output file containing
-error information, ensuring that the processing pipeline can continue.
+Reads a downloaded SEC EDGAR document (HTML, text, or PDF) from \code{.path_src}, extracts
+its raw content, standardizes the text, and writes the result as a compressed Parquet file
+at \code{.path_out}. If parsing fails (e.g., due to a corrupted PDF), an “error” record
+is written instead, containing the error message.
 }
 \keyword{internal}

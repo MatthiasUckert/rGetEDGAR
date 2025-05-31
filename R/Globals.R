@@ -36,7 +36,7 @@ utils::globalVariables(c(
   "path", "doc_id",
 
   # edgar_download_document
-  "YQSave", "DirOrig", "nAll", "nRow", "cAll", "cRow",
+  "YQSave", "DirOrig", "nAll", "nRow", "cAll", "cRow", "PathOrig",
 
   # edgar_get_docs_to_download
   "PathParse",

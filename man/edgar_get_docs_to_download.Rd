@@ -2,48 +2,39 @@
 % Please edit documentation in R/DocumentDownload.R
 \name{edgar_get_docs_to_download}
 \alias{edgar_get_docs_to_download}
-\title{Determine Documents to Download from SEC EDGAR}
+\title{Determine SEC EDGAR Documents Needing Download}
 \usage{
 edgar_get_docs_to_download(.dir, .doc_ids)
 }
 \arguments{
-\item{.dir}{Character string specifying the directory where the downloaded data will be stored.
-This directory should contain the necessary sub directory structure.}
+\item{.dir}{Character string. Base directory of the SEC EDGAR dataset. Used to locate:
+\itemize{
+\item The Arrow dataset directory of “link” metadata (via \code{lp_$DocLinks$DirMain$Links})
+\item The root folders for \code{DocumentData$Original} and \code{DocumentData$Parsed}
+}}
 
-\item{.doc_ids}{Character vector of DocID values to download. These IDs should correspond to document
-identifiers in the SEC EDGAR system.}
+\item{.doc_ids}{Character vector. One or more \code{DocID} values to look up in the “link” dataset.
+Only those IDs that have no existing parsed file will appear in the returned tibble.}
 }
 \value{
-A tibble containing document metadata and file paths for documents that need
-to be downloaded, with the following columns:
-\itemize{
-\item YearQuarter: Original filing year and quarter as numeric (e.g., 2023.1)
-\item DocTypeMod: Standardized document type
-\item DocID: Unique document identifier
-\item UrlDocument: URL to download the document
-\item YQSave: Year-quarter for directory structure (e.g., 2023-1)
-\item TypeSave: Standardized document type for directory structure
-\item DocExt: Document file extension
-\item PathOrig: File path for original document
-\item PathParse: File path for parsed document
+A tibble with the following columns:
+\describe{
+\item{\code{YearQuarter}}{Numeric (e.g., 2023.1) from the “links” dataset.}
+\item{\code{DocTypeMod}}{Character. Standardized document type (e.g., “10-K”).}
+\item{\code{DocID}}{Character. The unique document identifier.}
+\item{\code{UrlDocument}}{Character. The HTTP URL where the original filing sits.}
+\item{\code{YQSave}}{Character (e.g., “2023-1”). Used in directory naming.}
+\item{\code{TypeSave}}{Character. Cleaned \code{DocTypeMod} with no spaces or “/”.}
+\item{\code{DocExt}}{Character. Lower-case file extension (e.g., “html”, “pdf”).}
+\item{\code{PathOrig}}{Character. Full path where the downloaded original will be stored.}
+\item{\code{PathParse}}{Character. Full path where the parsed Parquet file will be written.}
 }
 }
 \description{
-Prepares a list of SEC EDGAR documents to download based on provided document IDs.
-This function filters the document links database to identify which documents need
-to be downloaded and determines appropriate file paths for saving.
-}
-\details{
-The function performs the following operations:
-\itemize{
-\item Queries the document links dataset to find matching document IDs
-\item Joins with document type mapping table to standardize document types
-\item Creates file paths for both original and parsed document storage
-\item Filters out documents that have already been processed
-}
-
-Document types are standardized according to a predefined mapping table,
-and output paths are generated using a consistent directory structure organized
-by document type and year-quarter period.
+Builds a tibble of metadata and file paths for all requested document IDs (\code{.doc_ids})
+that have not yet been parsed. It reads the EDGAR “links” dataset (via Arrow), filters
+for the specified \code{DocID}s, standardizes document types with a lookup table, and
+constructs filesystem paths for the original and parsed files. Only rows whose parsed
+Parquet file does not already exist are returned.
 }
 \keyword{internal}

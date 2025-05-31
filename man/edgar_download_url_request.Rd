@@ -2,42 +2,34 @@
 % Please edit documentation in R/DocumentDownload.R
 \name{edgar_download_url_request}
 \alias{edgar_download_url_request}
-\title{Download Document from URL}
+\title{Download a Single SEC Document from a URL}
 \usage{
 edgar_download_url_request(.url, .user, .path_out, .path_log, .verbose)
 }
 \arguments{
-\item{.url}{Character string specifying the URL of the document to download.}
+\item{.url}{Character string. The full URL of the document to fetch (e.g., an HTML, XML, PDF,
+or TXT file hosted on the SEC EDGAR site).}
 
-\item{.user}{Character string specifying the user agent to be used in HTTP requests.
-This should typically be an email address to comply with SEC's fair access policy.}
+\item{.user}{Character string. The \emph{User-Agent} to include in the HTTP GET request. Should
+comply with SEC guidelines (typically an email address).}
 
-\item{.path_out}{Character string specifying the file path where the downloaded document will be saved.}
+\item{.path_out}{Character string. The local file path (including filename and extension) where the
+downloaded content will be saved. Any non-existent parent directories will be created.}
 
-\item{.path_log}{Character string specifying the path to the log file for error logging.}
+\item{.path_log}{Character string. Path to a log file used to record errors (e.g., HTTP errors or content
+parsing failures). If an HTTP request or content parse fails, details are appended here.}
 
-\item{.verbose}{Logical indicating whether to print progress messages to the console during processing.
-Default is TRUE.}
+\item{.verbose}{Logical (default \code{TRUE}). If \code{TRUE}, errors during download or parse failures
+will be printed to the console in addition to being logged.}
 }
 \value{
-No return value, called for side effects (downloading and saving a file).
+Invisible \code{NULL}. Side effects include writing a new file at \code{.path_out}
+(unless the file already exists) and appending any error information to the log file.
 }
 \description{
-Downloads a document from a specified URL and saves it to the filesystem.
-This function handles different content types appropriately based on file extension.
-}
-\details{
-The function determines the appropriate download method based on the file extension:
-\itemize{
-\item Text-based formats (html, htm, xml, xsd, txt) are downloaded as text
-\item Other formats (like PDF, ZIP) are downloaded as binary data
-}
-
-The function creates the necessary directory structure if it doesn't exist.
-If the target file already exists, the function returns silently without
-re-downloading to avoid duplicate work.
-
-Error handling is implemented to log issues with HTTP requests or content
-parsing while allowing the process to continue with other documents.
+Downloads a single SEC EDGAR document from a specified URL and writes it to disk.
+Automatically chooses between text-based vs. binary download based on the file extension.
+Creates any needed parent directories. If the target file already exists, the function
+exits silently to avoid re-downloading.
 }
 \keyword{internal}

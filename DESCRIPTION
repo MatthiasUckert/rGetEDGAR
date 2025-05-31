@@ -26,6 +26,8 @@ Imports:
     digest,
     dplyr,
     fs,
+    furrr,
+    future,
     httr,
     janitor,
     lubridate,
