@@ -32,6 +32,7 @@
 #'   are suppressed.
 #'
 #' @return Called for side effects: original files are downloaded
+#' @export
 edgar_download_document <- function(.dir, .user, .doc_ids, .keep_orig = TRUE, .workers = 1L, .verbose = TRUE) {
   lp_ <- get_directories(.dir)
   msg_ <- "Determining Documents to Download ..."
