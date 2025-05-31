@@ -17,12 +17,13 @@ edgar_download_document(
 \item{.dir}{Character string. Path to the base directory where all downloaded data (original and parsed)
 will be stored. Must contain the expected subdirectory structure (as returned by \code{get_directories()}).}
 
-\item{.user}{Character string. The \emph{User-Agent} (typically an email address) to send in HTTP
+\item{.user}{Character string.
+The \emph{User-Agent} (typically an email address) to send in HTTP
 requests to the SEC EDGAR servers, to comply with the SEC’s fair access policy.}
 
-\item{.doc_ids}{Character vector. A vector of \code{DocID} identifiers corresponding to filings in the
-SEC EDGAR database. Only those documents whose parsed version does not already exist
-(in the \code{Parsed} folder) will be fetched.}
+\item{.doc_ids}{Character vector.
+A vector of \code{DocID} identifiers corresponding to filings in the SEC EDGAR database.
+Only those documents whose parsed version does not already exist (in the \code{Parsed} folder) will be fetched.}
 
 \item{.keep_orig}{Logical (default \code{TRUE}). If \code{TRUE}, the function will compress the downloaded original
 files for each \code{TypeSave}/\code{YQSave} grouping into a ZIP archive at the end of processing.

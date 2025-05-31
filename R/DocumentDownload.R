@@ -398,7 +398,7 @@ if (FALSE) {
     .user = user,
     .doc_ids = tab_docs$DocID,
     .keep_orig = FALSE,
-    .workers = 10L,
+    .workers = 25,
     .verbose = TRUE
   )
 }
