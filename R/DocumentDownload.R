@@ -38,7 +38,8 @@ edgar_download_document <- function(.dir, .user, .doc_ids, .keep_orig = TRUE, .v
     dplyr::mutate(
       DirOrig = file.path(lp_$DocumentData$Original, TypeSave, YQSave),
       PathZIP = paste0(DirOrig, ".zip")
-    )
+    ) %>%
+    dplyr::arrange(TypeSave, YQSave)
 
   for (i in seq_len(nrow(nst_links))) {
     use_links <- nst_links$data[[i]] %>%
@@ -332,18 +333,20 @@ if (FALSE) {
   dir_debug <- fs::dir_create("../_package_debug/rGetEDGAR")
   lp_ <- get_directories(dir_debug)
 
-  tab_ex10 <- dplyr::filter(Table_DocTypesRaw, DocTypeMod == "Exhibit 10")
-  scales::comma(sum(tab_ex10$nDocs))
-  docs <- arrow::open_dataset(lp_$DocLinks$DirMain$Links) %>%
-    dplyr::filter(Type %in% tab_ex10$DocTypeRaw) %>%
-    dplyr::distinct(DocID) %>%
+  tab_10ks <- dplyr::filter(Table_DocTypesRaw, DocTypeMod == "10-K")
+  tab_docs <- arrow::open_dataset(lp_$DocLinks$DirMain$Links) %>%
+    dplyr::filter(Type %in% tab_10ks$DocTypeRaw) %>%
     dplyr::collect() %>%
-    dplyr::pull(DocID)
-  scales::comma(length(docs))
+    dplyr::distinct(DocID, .keep_all = TRUE) %>%
+    dplyr::filter(grepl("ix?doc=", UrlDocument, fixed = TRUE))
+
+  scales::comma(sum(tab_10ks$nDocs))
+  scales::comma(nrow(tab_docs))
 
   .dir <- dir_debug
   .user <- user
-  .doc_ids <- sample(docs, size = 100)
+  .doc_ids <- tab_docs$DocID[1:100]
+  .keep_orig = FALSE
   .verbose <- TRUE
 
 
