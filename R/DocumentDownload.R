@@ -328,13 +328,7 @@ edgar_parse_documents <- function(.path_src, .path_out) {
 # DeBug ---------------------------------------------------------------------------------------
 if (FALSE) {
   devtools::load_all(".")
-  # library(rGetEDGAR)
-  user <- unname(ifelse(
-    Sys.info()["sysname"] == "Darwin",
-    "PetroParkerLosSpiderHombreABC12@Outlook.com",
-    "TonyStarkIronManWeaponXYZ847263@Outlook.com"
-  ))
-
+  user <- "TonyStarkIronManWeaponXYZ847263@Outlook.com"
   dir_debug <- fs::dir_create("../_package_debug/rGetEDGAR")
   lp_ <- get_directories(dir_debug)
 
@@ -352,10 +346,12 @@ if (FALSE) {
   .doc_ids <- sample(docs, size = 100)
   .verbose <- TRUE
 
+
+
   edgar_download_document(
     .dir = dir_debug,
     .user = user,
-    .doc_ids = sample(docs, size = 100),
+    .doc_ids = "0000021076-2b3e3582334324bbc0d77093ba366ca2",
     .keep_orig = FALSE,
     .verbose = TRUE
   )
