@@ -89,8 +89,14 @@ edgar_download_document <- function(.dir, .user, .doc_ids, .keep_orig = TRUE, .w
           compression_level = 9
         )
       } else {
-        try(fs::dir_delete(nst_links$DirOrig[i]), silent = TRUE)
+        zip::zipr(
+          zipfile = nst_links$PathZIP[i],
+          files = use_links$PathOrig[file.exists(use_links$PathOrig)],
+          compression_level = 9
+        )
       }
+    } else {
+      try(fs::dir_delete(nst_links$DirOrig[i]), silent = TRUE)
     }
   }
   future::plan("default")
@@ -107,7 +113,7 @@ edgar_download_document <- function(.dir, .user, .doc_ids, .keep_orig = TRUE, .w
 #' @keywords internal
 edgar_prepare_print_message <- function(.nst, .counter) {
   type_ <- .nst$TypeSave[.counter]
-  yq_   <- .nst$YQSave[.counter]
+  yq_ <- .nst$YQSave[.counter]
 
   # Access the nested tibble for this grouping
   .nst$data[[.counter]] %>%
@@ -280,6 +286,7 @@ edgar_get_docs_to_download <- function(.dir, .doc_ids) {
       PathOrig = file.path(lp_$DocumentData$Original, TypeSave, YQSave, paste0(DocID, ".", DocExt)),
       PathParse = file.path(lp_$DocumentData$Parsed, TypeSave, YQSave, paste0(DocID, ".parquet"))
     ) %>%
+    dplyr::mutate(UrlDocument = gsub("ix?doc=", "", UrlDocument, fixed = TRUE)) %>%
     dplyr::filter(!file.exists(PathParse))
 }
 
@@ -314,9 +321,9 @@ edgar_parse_documents <- function(.path_src, .path_out) {
   }
 
   quiet <- function(x) {
-    sink(tempfile())        # divert stdout to a temp file
-    on.exit(sink())         # ensure we restore stdout when done
-    invisible(force(x))     # force evaluation of x, return invisibly
+    sink(tempfile()) # divert stdout to a temp file
+    on.exit(sink()) # ensure we restore stdout when done
+    invisible(force(x)) # force evaluation of x, return invisibly
   }
 
   if (file_ext_ %in% c("txt", "htm", "html", "xml", "xsd")) {
@@ -381,17 +388,15 @@ if (FALSE) {
 
   .dir <- dir_debug
   .user <- user
-  .doc_ids <- tab_docs$DocID[1:1000]
+  .doc_ids <- tab_docs$DocID
   .keep_orig <- FALSE
   .workers <- 10L
   .verbose <- TRUE
 
-
-
   edgar_download_document(
     .dir = dir_debug,
     .user = user,
-    .doc_ids =  tab_docs$DocID[1:1000],
+    .doc_ids = tab_docs$DocID,
     .keep_orig = FALSE,
     .workers = 10L,
     .verbose = TRUE
