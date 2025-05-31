@@ -325,11 +325,16 @@ edgar_parse_documents <- function(.path_src, .path_out) {
     return(invisible(NULL))
   }
 
+  quiet <- function(x) {
+    sink(tempfile())        # divert stdout to a temp file
+    on.exit(sink())         # ensure we restore stdout when done
+    invisible(force(x))     # force evaluation of x, return invisibly
+  }
 
   if (file_ext_ %in% c("txt", "htm", "html", "xml", "xsd")) {
     orig_ <- try(readChar(.path_src, file.info(.path_src)$size), silent = TRUE)
   } else if (file_ext_ %in% c("pdf")) {
-    orig_ <- try(readtext::readtext(.path_src)[["text"]], silent = TRUE)
+    orig_ <- quiet(try(readtext::readtext(.path_src)[["text"]], silent = TRUE))
   } else {
     orig_ <- try(stop(paste0(file_ext_, "is not supported"), call. = FALSE))
   }
