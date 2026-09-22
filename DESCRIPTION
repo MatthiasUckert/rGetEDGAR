@@ -2,8 +2,7 @@ Package: rGetEDGAR
 Title: Efficient Parallel Downloading and Processing of SEC EDGAR Filings
 Version: 0.1.0
 Authors@R: 
-    person("Matthias", "Uckert", , "Matthias.Uckert@outlook.com", role = c("aut", "cre"),
-           comment = c(ORCID = ""))
+    person("Matthias", "Uckert", , "Matthias.Uckert@outlook.com", role = c("aut", "cre"))
 Description: Provides tools for downloading and processing SEC EDGAR (Electronic Data 
     Gathering, Analysis, and Retrieval) filings with a focus on performance and reliability. 
     The package implements a complete pipeline for accessing financial regulatory documents,
@@ -43,7 +42,7 @@ Imports:
     tidyr,
     zip
 Depends: 
-    R (>= 3.5)
+    R (>= 4.1)
 LazyData: true
 Suggests:
     knitr,
