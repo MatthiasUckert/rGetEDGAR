@@ -313,7 +313,7 @@ edgar_get_docs_to_download <- function(.dir, .doc_ids) {
 #'   at \code{.path_out}. If parsing fails, a one-row Parquet file is still written containing
 #'   the \code{ErrParse = TRUE} record.
 #'
-#' @keywords internal
+#' @export
 edgar_parse_documents <- function(.path_src, .path_out) {
   fs::dir_create(dirname(.path_out))
   file_ext_ <- tolower(tools::file_ext(.path_src))

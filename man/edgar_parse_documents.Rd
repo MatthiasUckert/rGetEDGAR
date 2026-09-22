@@ -26,4 +26,3 @@ its raw content, standardizes the text, and writes the result as a compressed Pa
 at \code{.path_out}. If parsing fails (e.g., due to a corrupted PDF), an “error” record
 is written instead, containing the error message.
 }
-\keyword{internal}
